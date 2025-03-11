@@ -28,7 +28,7 @@ if the image is named earth.png the json is named earth.json. That way with the 
 
 ### Usage
 
-1. Start the Booru API: with "docker run --rm -p 5000:5000 ghcr.io/danbooru/autotagger"
+1. Start the Booru API: with "docker run --rm -p 5000:5000 ghcr.io/danbooru/autotagger" You need to do this first before enabling multiple instances. Once you activate the first instance then you can start the rest to enable multiple image processing.
 
 2. Configure the Processor:
 Enter the API endpoint (default: http://localhost:5000/evaluate)
