@@ -115,6 +115,53 @@
       color: #4CAF50;
       font-weight: bold;
     }
+    .mode-options {
+      margin-top: 5px;
+    }
+    .mode-options label {
+      font-weight: normal;
+      display: flex;
+      align-items: center;
+      margin-bottom: 5px;
+    }
+    .mode-options input[type="radio"] {
+      margin-right: 8px;
+    }
+    .selected-folders {
+      margin-top: 10px;
+      max-height: 100px;
+      overflow-y: auto;
+      font-size: 12px;
+    }
+    .folder-item {
+      background-color: #f0f0f0;
+      padding: 4px 8px;
+      margin: 2px 0;
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .remove-folder {
+      background: none;
+      border: none;
+      color: #f44336;
+      font-weight: bold;
+      cursor: pointer;
+      padding: 0 5px;
+    }
+    .subfolder-option {
+      margin-top: 10px;
+    }
+    .subfolder-option label {
+      font-weight: normal;
+      display: flex;
+      align-items: center;
+    }
+    .overall-progress {
+      margin-top: 10px;
+      font-size: 12px;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -132,10 +179,37 @@
     </div>
     
     <div class="form-group">
-      <label for="inputFolder">Input Folder:</label>
+      <label>Input Folders:</label>
       <div class="folder-select">
-        <input type="text" id="inputFolder" readonly placeholder="Select folder containing images...">
+        <input type="text" id="inputFolder" readonly placeholder="Select folder(s) containing images...">
         <button id="selectFolderBtn">Browse...</button>
+      </div>
+      <div id="selectedFolders" class="selected-folders">
+        <!-- Selected folders will appear here -->
+      </div>
+      <div class="subfolder-option">
+        <label>
+          <input type="checkbox" id="includeSubfolders" checked>
+          Include subfolders (process images in all subfolders)
+        </label>
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <label>Processing Mode:</label>
+      <div class="mode-options">
+        <label>
+          <input type="radio" name="processMode" value="all" checked>
+          Process all images
+        </label>
+        <label>
+          <input type="radio" name="processMode" value="new">
+          Process only new images (skip previously processed)
+        </label>
+        <label>
+          <input type="radio" name="processMode" value="missing">
+          Reprocess only images with missing JSON files
+        </label>
       </div>
     </div>
     
@@ -144,6 +218,7 @@
     <div class="progress-container" style="display:none;">
       <div class="progress-bar"></div>
       <div class="progress-text">0%</div>
+      <div class="overall-progress">Preparing...</div>
       <div class="progress-controls">
         <button id="pauseResumeBtn">Pause</button>
         <button id="cancelBtn">Cancel</button>
@@ -155,6 +230,7 @@
   
   <script>
     const { ipcRenderer } = require('electron');
+    const path = require('path');
     
     // Elements
     const apiEndpointInput = document.getElementById('apiEndpoint');
@@ -169,16 +245,129 @@
     const cancelBtn = document.getElementById('cancelBtn');
     const logElement = document.getElementById('log');
     
-    // Processing state
+    // State variables
     let isProcessing = false;
     let isPaused = false;
+    let selectedFolders = [];
+    
+    // Get selected process mode
+    function getProcessMode() {
+      const modeRadios = document.getElementsByName('processMode');
+      for (const radio of modeRadios) {
+        if (radio.checked) {
+          return radio.value;
+        }
+      }
+      return 'all'; // default
+    }
+    
+    // Update the selected folders list in the UI
+    function updateSelectedFoldersList() {
+      const container = document.getElementById('selectedFolders');
+      container.innerHTML = '';
+      
+      selectedFolders.forEach(folder => {
+        const item = document.createElement('div');
+        item.className = 'folder-item';
+        item.innerHTML = `
+          <span>${folder}</span>
+          <button class="remove-folder" data-folder="${folder}">×</button>
+        `;
+        container.appendChild(item);
+      });
+      
+      // Add event listeners to remove buttons
+      document.querySelectorAll('.remove-folder').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const folderToRemove = this.getAttribute('data-folder');
+          selectedFolders = selectedFolders.filter(f => f !== folderToRemove);
+          
+          // Update UI
+          if (selectedFolders.length === 0) {
+            inputFolderInput.value = '';
+            processBtn.disabled = true;
+          } else {
+            inputFolderInput.value = selectedFolders.length === 1 ? 
+              selectedFolders[0] : `${selectedFolders.length} folders selected`;
+          }
+          
+          updateSelectedFoldersList();
+        });
+      });
+    }
+    
+    // Analyze selected folder and show results
+    async function analyzeSelectedFolder(folder) {
+      if (!folder) return;
+      
+      // Show analyzing message
+      addLog(`Analyzing folder: ${folder}...`);
+      
+      // Analyze folder
+      try {
+        const result = await ipcRenderer.invoke('analyze-folder', folder);
+        
+        if (result.hasJsonFolder) {
+          addLog(`Found existing Json folder in "${path.basename(folder)}" with ${result.jsonCount} JSON files`, 'success');
+          
+          if (result.logCount > 0) {
+            addLog(`Processing log contains ${result.logCount} entries`);
+          }
+          
+          if (result.missingCount > 0) {
+            addLog(`Found ${result.missingCount} images with missing JSON files`, 'error');
+          }
+          
+          // Only give recommendations for single folder selection
+          if (selectedFolders.length === 1) {
+            // Give recommendations
+            if (result.jsonCount === 0) {
+              addLog(`Recommendation: Use "Process all images" mode`);
+            } else if (result.missingCount > 0) {
+              addLog(`Recommendation: Use "Reprocess missing JSON files" mode`);
+              // Auto-select the missing mode
+              document.querySelector('input[name="processMode"][value="missing"]').checked = true;
+            } else if (result.jsonCount < result.imageCount) {
+              addLog(`Recommendation: Use "Process only new images" mode`);
+              // Auto-select the new mode
+              document.querySelector('input[name="processMode"][value="new"]').checked = true;
+            } else {
+              addLog(`All images appear to have JSON files. Use "Process all images" only if you want to regenerate them.`);
+            }
+          }
+        } else {
+          addLog(`No existing Json folder found in "${path.basename(folder)}". Will create one when processing.`);
+          
+          // Only auto-select for single folder
+          if (selectedFolders.length === 1) {
+            // Auto-select the all mode
+            document.querySelector('input[name="processMode"][value="all"]').checked = true;
+          }
+        }
+      } catch (error) {
+        addLog(`Error analyzing folder: ${error.message}`, 'error');
+      }
+    }
     
     // Add event listeners
     selectFolderBtn.addEventListener('click', async () => {
-      const folder = await ipcRenderer.invoke('select-folder');
-      if (folder) {
-        inputFolderInput.value = folder;
+      const folders = await ipcRenderer.invoke('select-folders');
+      if (folders && folders.length > 0) {
+        // Store and display folders
+        selectedFolders = folders;
+        
+        inputFolderInput.value = selectedFolders.length === 1 ? 
+          selectedFolders[0] : `${selectedFolders.length} folders selected`;
+        
+        updateSelectedFoldersList();
         processBtn.disabled = false;
+        
+        // Analyze the folders
+        addLog(`Selected ${folders.length} folder(s) for processing`);
+        
+        for (const folder of folders) {
+          await analyzeSelectedFolder(folder);
+        }
       }
     });
     
@@ -208,10 +397,37 @@
       }
     }
     
+    // Toggle pause/resume
+    function togglePause() {
+      if (!isProcessing) return;
+      
+      isPaused = !isPaused;
+      pauseResumeBtn.textContent = isPaused ? 'Resume' : 'Pause';
+      
+      ipcRenderer.send('toggle-pause');
+      
+      if (isPaused) {
+        addLog(`Processing paused by user`);
+      } else {
+        addLog(`Processing resumed by user`);
+      }
+    }
+    
+    // Cancel processing
+    function cancelProcessing() {
+      if (!isProcessing) return;
+      
+      const confirmCancel = confirm('Are you sure you want to cancel processing?');
+      if (confirmCancel) {
+        ipcRenderer.send('cancel-processing');
+        addLog(`Canceling processing...`, 'error');
+      }
+    }
+    
     // Process button handler
     processBtn.addEventListener('click', async () => {
-      if (!inputFolderInput.value) {
-        alert('Please select an input folder first');
+      if (selectedFolders.length === 0) {
+        alert('Please select at least one folder');
         return;
       }
       
@@ -223,7 +439,6 @@
       // Set processing state
       isProcessing = true;
       isPaused = false;
-      pauseResumeBtn.textContent = 'Pause';
       
       // Disable controls during processing
       processBtn.disabled = true;
@@ -231,13 +446,21 @@
       
       // Show progress and controls
       progressContainer.style.display = 'block';
+      progressBar.style.width = '0%';
+      progressText.textContent = 'Preparing...';
+      document.querySelector('.overall-progress').textContent = `Preparing to process ${selectedFolders.length} folders...`;
+      pauseResumeBtn.textContent = 'Pause';
+      
+      // Clear log
       logElement.innerHTML = 'Starting processing...<br>';
       
       try {
         const result = await ipcRenderer.invoke('process-images', {
-          inputFolder: inputFolderInput.value,
+          folders: selectedFolders,
           apiEndpoint: apiEndpointInput.value,
-          confidenceThreshold: parseFloat(confidenceThresholdInput.value)
+          confidenceThreshold: parseFloat(confidenceThresholdInput.value),
+          processMode: getProcessMode(),
+          includeSubfolders: document.getElementById('includeSubfolders').checked
         });
         
         if (result.canceled) {
@@ -246,11 +469,11 @@
           addLog(`Processing completed!`, 'success');
         }
         
+        addLog(`Total folders: ${result.folderCount}`);
         addLog(`Total images: ${result.total}`);
         addLog(`Processed: ${result.processed}`);
         addLog(`Successfully processed: ${result.success}`);
         addLog(`Failed: ${result.failed}`);
-        addLog(`JSON files saved to: ${result.jsonFolder}`);
       } catch (error) {
         addLog(`Error: ${error.message}`, 'error');
       } finally {
@@ -265,31 +488,10 @@
     });
     
     // Pause/Resume button handler
-    pauseResumeBtn.addEventListener('click', () => {
-      if (!isProcessing) return;
-      
-      isPaused = !isPaused;
-      pauseResumeBtn.textContent = isPaused ? 'Resume' : 'Pause';
-      
-      ipcRenderer.send('toggle-pause');
-      
-      if (isPaused) {
-        addLog(`Processing paused by user`);
-      } else {
-        addLog(`Processing resumed by user`);
-      }
-    });
+    pauseResumeBtn.addEventListener('click', togglePause);
     
     // Cancel button handler
-    cancelBtn.addEventListener('click', () => {
-      if (!isProcessing) return;
-      
-      const confirmCancel = confirm('Are you sure you want to cancel processing?');
-      if (confirmCancel) {
-        ipcRenderer.send('cancel-processing');
-        addLog(`Canceling processing...`, 'error');
-      }
-    });
+    cancelBtn.addEventListener('click', cancelProcessing);
     
     // Handle pause state changes from main process
     ipcRenderer.on('pause-state-changed', (event, paused) => {
@@ -319,6 +521,21 @@
       const percent = Math.round((data.current / data.total) * 100);
       progressBar.style.width = `${percent}%`;
       progressText.textContent = `${percent}% (${data.current}/${data.total}) - Processing: ${data.file}`;
+    });
+    
+    // Handle folder-level progress
+    ipcRenderer.on('progress-folder', (event, data) => {
+      const percent = Math.round((data.current / data.total) * 100);
+      progressBar.style.width = `${percent}%`;
+      progressText.textContent = `${percent}% (${data.current}/${data.total}) - ${data.file}`;
+    });
+    
+    // Handle overall progress
+    ipcRenderer.on('progress-overall', (event, data) => {
+      const overallEl = document.querySelector('.overall-progress');
+      if (overallEl) {
+        overallEl.textContent = `Processing folder ${data.current} of ${data.total}: ${path.basename(data.folder)}`;
+      }
     });
   </script>
 </body>
