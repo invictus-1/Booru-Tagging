@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Booru Image Processor</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      margin-top: 0;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    input[type="text"], input[type="number"] {
+      width: 100%;
+      padding: 8px;
+      box-sizing: border-box;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .folder-select {
+      display: flex;
+      gap: 10px;
+    }
+    .folder-select input {
+      flex: 1;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .process-btn {
+      display: block;
+      margin: 20px auto;
+      padding: 12px 24px;
+      font-size: 16px;
+    }
+    #log {
+      height: 200px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      margin-top: 20px;
+      overflow-y: auto;
+      font-family: monospace;
+      background-color: #f9f9f9;
+    }
+    .progress-container {
+      margin-top: 20px;
+    }
+    .progress-bar {
+      height: 20px;
+      background-color: #4CAF50;
+      width: 0%;
+      border-radius: 4px;
+      transition: width 0.3s;
+    }
+    .progress-text {
+      text-align: center;
+      margin-top: 5px;
+    }
+    .progress-controls {
+      margin-top: 10px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+    #pauseResumeBtn {
+      background-color: #2196F3;
+    }
+    #pauseResumeBtn:hover {
+      background-color: #0b7dda;
+    }
+    #cancelBtn {
+      background-color: #f44336;
+    }
+    #cancelBtn:hover {
+      background-color: #d32f2f;
+    }
+    .error {
+      color: #f44336;
+      font-weight: bold;
+    }
+    .success {
+      color: #4CAF50;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Booru Image Processor</h1>
+    
+    <div class="form-group">
+      <label for="apiEndpoint">API Endpoint:</label>
+      <input type="text" id="apiEndpoint" value="http://localhost:5000/evaluate">
+    </div>
+    
+    <div class="form-group">
+      <label for="confidenceThreshold">Confidence Threshold:</label>
+      <input type="number" id="confidenceThreshold" value="0.5" min="0" max="1" step="0.01">
+    </div>
+    
+    <div class="form-group">
+      <label for="inputFolder">Input Folder:</label>
+      <div class="folder-select">
+        <input type="text" id="inputFolder" readonly placeholder="Select folder containing images...">
+        <button id="selectFolderBtn">Browse...</button>
+      </div>
+    </div>
+    
+    <button id="processBtn" class="process-btn" disabled>Process Images</button>
+    
+    <div class="progress-container" style="display:none;">
+      <div class="progress-bar"></div>
+      <div class="progress-text">0%</div>
+      <div class="progress-controls">
+        <button id="pauseResumeBtn">Pause</button>
+        <button id="cancelBtn">Cancel</button>
+      </div>
+    </div>
+    
+    <div id="log">Ready to process images...</div>
+  </div>
+  
+  <script>
+    const { ipcRenderer } = require('electron');
+    
+    // Elements
+    const apiEndpointInput = document.getElementById('apiEndpoint');
+    const confidenceThresholdInput = document.getElementById('confidenceThreshold');
+    const inputFolderInput = document.getElementById('inputFolder');
+    const selectFolderBtn = document.getElementById('selectFolderBtn');
+    const processBtn = document.getElementById('processBtn');
+    const progressContainer = document.querySelector('.progress-container');
+    const progressBar = document.querySelector('.progress-bar');
+    const progressText = document.querySelector('.progress-text');
+    const pauseResumeBtn = document.getElementById('pauseResumeBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const logElement = document.getElementById('log');
+    
+    // Processing state
+    let isProcessing = false;
+    let isPaused = false;
+    
+    // Add event listeners
+    selectFolderBtn.addEventListener('click', async () => {
+      const folder = await ipcRenderer.invoke('select-folder');
+      if (folder) {
+        inputFolderInput.value = folder;
+        processBtn.disabled = false;
+      }
+    });
+    
+    // Check API connection
+    async function checkApiConnection() {
+      const apiEndpoint = apiEndpointInput.value;
+      
+      addLog('Checking connection to Booru API...');
+      
+      try {
+        const result = await ipcRenderer.invoke('check-api-connection', apiEndpoint);
+        
+        if (!result.success) {
+          addLog(`Failed to connect to API: ${result.error}`, 'error');
+          addLog(`Make sure the Booru Autotagger API is running at ${apiEndpoint}`, 'error');
+          
+          alert(`Failed to connect to the Booru API at ${apiEndpoint}\n\nError: ${result.error}\n\nMake sure the Docker container is running with:\ndocker run --rm -p 5000:5000 ghcr.io/danbooru/autotagger`);
+          return false;
+        }
+        
+        addLog('Successfully connected to Booru API ✓', 'success');
+        return true;
+      } catch (error) {
+        addLog(`Error checking API: ${error.message}`, 'error');
+        alert(`Error checking API connection: ${error.message}`);
+        return false;
+      }
+    }
+    
+    // Process button handler
+    processBtn.addEventListener('click', async () => {
+      if (!inputFolderInput.value) {
+        alert('Please select an input folder first');
+        return;
+      }
+      
+      // Check API connection first
+      if (!await checkApiConnection()) {
+        return;
+      }
+      
+      // Set processing state
+      isProcessing = true;
+      isPaused = false;
+      pauseResumeBtn.textContent = 'Pause';
+      
+      // Disable controls during processing
+      processBtn.disabled = true;
+      selectFolderBtn.disabled = true;
+      
+      // Show progress and controls
+      progressContainer.style.display = 'block';
+      logElement.innerHTML = 'Starting processing...<br>';
+      
+      try {
+        const result = await ipcRenderer.invoke('process-images', {
+          inputFolder: inputFolderInput.value,
+          apiEndpoint: apiEndpointInput.value,
+          confidenceThreshold: parseFloat(confidenceThresholdInput.value)
+        });
+        
+        if (result.canceled) {
+          addLog(`Processing canceled!`, 'error');
+        } else {
+          addLog(`Processing completed!`, 'success');
+        }
+        
+        addLog(`Total images: ${result.total}`);
+        addLog(`Processed: ${result.processed}`);
+        addLog(`Successfully processed: ${result.success}`);
+        addLog(`Failed: ${result.failed}`);
+        addLog(`JSON files saved to: ${result.jsonFolder}`);
+      } catch (error) {
+        addLog(`Error: ${error.message}`, 'error');
+      } finally {
+        // Reset processing state
+        isProcessing = false;
+        isPaused = false;
+        
+        // Re-enable controls
+        processBtn.disabled = false;
+        selectFolderBtn.disabled = false;
+      }
+    });
+    
+    // Pause/Resume button handler
+    pauseResumeBtn.addEventListener('click', () => {
+      if (!isProcessing) return;
+      
+      isPaused = !isPaused;
+      pauseResumeBtn.textContent = isPaused ? 'Resume' : 'Pause';
+      
+      ipcRenderer.send('toggle-pause');
+      
+      if (isPaused) {
+        addLog(`Processing paused by user`);
+      } else {
+        addLog(`Processing resumed by user`);
+      }
+    });
+    
+    // Cancel button handler
+    cancelBtn.addEventListener('click', () => {
+      if (!isProcessing) return;
+      
+      const confirmCancel = confirm('Are you sure you want to cancel processing?');
+      if (confirmCancel) {
+        ipcRenderer.send('cancel-processing');
+        addLog(`Canceling processing...`, 'error');
+      }
+    });
+    
+    // Handle pause state changes from main process
+    ipcRenderer.on('pause-state-changed', (event, paused) => {
+      isPaused = paused;
+      pauseResumeBtn.textContent = isPaused ? 'Resume' : 'Pause';
+    });
+    
+    // Handle processing canceled notification
+    ipcRenderer.on('processing-canceled', () => {
+      isProcessing = false;
+    });
+    
+    // Add log message
+    function addLog(message, type = '') {
+      const className = type ? ` class="${type}"` : '';
+      logElement.innerHTML += `<div${className}>${message}</div>`;
+      logElement.scrollTop = logElement.scrollHeight;
+    }
+    
+    // Handle log messages
+    ipcRenderer.on('log', (event, message) => {
+      addLog(message);
+    });
+    
+    // Handle progress updates
+    ipcRenderer.on('progress', (event, data) => {
+      const percent = Math.round((data.current / data.total) * 100);
+      progressBar.style.width = `${percent}%`;
+      progressText.textContent = `${percent}% (${data.current}/${data.total}) - Processing: ${data.file}`;
+    });
+  </script>
+</body>
+</html>
