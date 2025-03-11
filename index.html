@@ -162,6 +162,26 @@
       font-size: 12px;
       font-weight: bold;
     }
+    /* New styles for concurrency and API instances control */
+    .concurrency-setting {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .hint {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+    }
+    .warning {
+      color: #f57c00;
+      font-weight: bold;
+    }
+    .instance-progress {
+      margin-top: 5px;
+      font-size: 12px;
+    }
   </style>
 </head>
 <body>
@@ -195,6 +215,31 @@
       </div>
     </div>
     
+    <!-- New section for processing speed control -->
+    <div class="form-group">
+      <label for="concurrency">Processing Speed:</label>
+      <div class="concurrency-setting">
+        <input type="range" id="concurrency" min="1" max="20" value="5" step="1">
+        <span id="concurrencyValue">5</span> images at once
+      </div>
+      <div class="hint">
+        Higher values = faster processing but higher CPU/memory usage
+      </div>
+    </div>
+    
+    <!-- New section for API instances control -->
+    <div class="form-group">
+      <label for="apiInstances">API Instances:</label>
+      <div class="concurrency-setting">
+        <input type="range" id="apiInstances" min="1" max="8" value="1" step="1">
+        <span id="apiInstancesValue">1</span> instance(s)
+      </div>
+      <div class="hint warning">
+        <strong>Warning:</strong> Running multiple API instances requires Docker and uses significant system 
+        resources. Each instance may require 2-4GB of RAM.
+      </div>
+    </div>
+    
     <div class="form-group">
       <label>Processing Mode:</label>
       <div class="mode-options">
@@ -219,6 +264,7 @@
       <div class="progress-bar"></div>
       <div class="progress-text">0%</div>
       <div class="overall-progress">Preparing...</div>
+      <div class="instance-progress"></div>
       <div class="progress-controls">
         <button id="pauseResumeBtn">Pause</button>
         <button id="cancelBtn">Cancel</button>
@@ -244,11 +290,30 @@
     const pauseResumeBtn = document.getElementById('pauseResumeBtn');
     const cancelBtn = document.getElementById('cancelBtn');
     const logElement = document.getElementById('log');
+    const concurrencySlider = document.getElementById('concurrency');
+    const concurrencyValue = document.getElementById('concurrencyValue');
+    const apiInstancesSlider = document.getElementById('apiInstances');
+    const apiInstancesValue = document.getElementById('apiInstancesValue');
     
     // State variables
     let isProcessing = false;
     let isPaused = false;
     let selectedFolders = [];
+    
+    // Concurrency slider listener
+    concurrencySlider.addEventListener('input', function() {
+      concurrencyValue.textContent = this.value;
+    });
+    
+    // API instances slider listener
+    apiInstancesSlider.addEventListener('input', function() {
+      apiInstancesValue.textContent = this.value;
+      
+      // Show warning for high values
+      if (parseInt(this.value) >= 4) {
+        addLog(`Warning: Running ${this.value} API instances may consume significant system resources!`, 'error');
+      }
+    });
     
     // Get selected process mode
     function getProcessMode() {
@@ -431,6 +496,13 @@
         return;
       }
       
+      // Check for multiple API instances
+      const apiInstances = parseInt(apiInstancesSlider.value);
+      if (apiInstances > 1) {
+        const confirmed = confirm(`You're about to start ${apiInstances} Docker instances of the Booru API. This may use significant system resources. Continue?`);
+        if (!confirmed) return;
+      }
+      
       // Check API connection first
       if (!await checkApiConnection()) {
         return;
@@ -448,7 +520,7 @@
       progressContainer.style.display = 'block';
       progressBar.style.width = '0%';
       progressText.textContent = 'Preparing...';
-      document.querySelector('.overall-progress').textContent = `Preparing to process ${selectedFolders.length} folders...`;
+      document.querySelector('.overall-progress').textContent = `Preparing to process ${selectedFolders.length} folders with ${apiInstances} API instance(s)...`;
       pauseResumeBtn.textContent = 'Pause';
       
       // Clear log
@@ -460,7 +532,9 @@
           apiEndpoint: apiEndpointInput.value,
           confidenceThreshold: parseFloat(confidenceThresholdInput.value),
           processMode: getProcessMode(),
-          includeSubfolders: document.getElementById('includeSubfolders').checked
+          includeSubfolders: document.getElementById('includeSubfolders').checked,
+          concurrency: parseInt(concurrencySlider.value),
+          apiInstances: apiInstances
         });
         
         if (result.canceled) {
@@ -474,6 +548,7 @@
         addLog(`Processed: ${result.processed}`);
         addLog(`Successfully processed: ${result.success}`);
         addLog(`Failed: ${result.failed}`);
+        addLog(`API instances used: ${result.instancesUsed}`);
       } catch (error) {
         addLog(`Error: ${error.message}`, 'error');
       } finally {
@@ -527,7 +602,22 @@
     ipcRenderer.on('progress-folder', (event, data) => {
       const percent = Math.round((data.current / data.total) * 100);
       progressBar.style.width = `${percent}%`;
-      progressText.textContent = `${percent}% (${data.current}/${data.total}) - ${data.file}`;
+      progressText.textContent = `${percent}% (${data.current}/${data.total}) - ${data.file || ''}`;
+    });
+    
+    // Handle individual image progress (optional)
+    ipcRenderer.on('progress-item', (event, data) => {
+      // We don't update the UI for each item to avoid performance issues
+      // But we can use this to track specific images if needed
+    });
+    
+    // Handle instance progress
+    ipcRenderer.on('progress-instance', (event, data) => {
+      const percent = Math.round((data.current / data.total) * 100);
+      const instanceEl = document.querySelector('.instance-progress');
+      if (instanceEl) {
+        instanceEl.textContent = `Instance #${data.instance+1}: ${percent}% (${data.current}/${data.total})`;
+      }
     });
     
     // Handle overall progress
