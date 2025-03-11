@@ -28,11 +28,22 @@ if the image is named earth.png the json is named earth.json. That way with the 
 
 ### Usage
 
-1. Start the Booru API: with docker run --rm -p 5000:5000 ghcr.io/danbooru/autotagger
-2. Select the folder you want to start tagging. A separate JSON folder will be made with all the tags so you don't have to worry about it messing with things
-3. Open up Eagle Plugin and select your json folder and it will automatically start inputting those tags. Keep in mind you have to have those images in your Eagle library. So if your tagging
-images from your "Anime" folder make sure your Eagle library already has the images from that folder imported.
-4. The plugin will find the matching JSON files and apply tags to your images
+1. Start the Booru API: with "docker run --rm -p 5000:5000 ghcr.io/danbooru/autotagger"
+
+2.Configure the Processor:
+Enter the API endpoint (default: http://localhost:5000/evaluate)
+Set your confidence threshold (0.0-1.0)
+Click “Browse…” to select the folder containing your images
+
+3. Process Your Images:
+Click “Process Images” to start
+A “Json” subfolder will be created in your selected directory
+Each image will be processed and its tags saved as a JSON file
+
+4.Control Processing:
+Use the “Pause” button to temporarily halt processing
+Use “Resume” to continue after pausing
+Use “Cancel” to abort the process entirely
 
 ## JSON Format
 
