@@ -30,7 +30,7 @@ if the image is named earth.png the json is named earth.json. That way with the 
 
 1. Start the Booru API: with "docker run --rm -p 5000:5000 ghcr.io/danbooru/autotagger"
 
-2.Configure the Processor:
+2. Configure the Processor:
 Enter the API endpoint (default: http://localhost:5000/evaluate)
 Set your confidence threshold (0.0-1.0)
 Click “Browse…” to select the folder containing your images
@@ -40,7 +40,7 @@ Click “Process Images” to start
 A “Json” subfolder will be created in your selected directory
 Each image will be processed and its tags saved as a JSON file
 
-4.Control Processing:
+4. Control Processing:
 Use the “Pause” button to temporarily halt processing
 Use “Resume” to continue after pausing
 Use “Cancel” to abort the process entirely
