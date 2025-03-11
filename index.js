@@ -4,6 +4,10 @@ const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
+const http = require('http');
+const https = require('https');
+const os = require('os');
+const dns = require('dns').promises;
 
 let mainWindow;
 let processingState = {
@@ -11,15 +15,189 @@ let processingState = {
   isCanceled: false
 };
 
-// Track running Docker containers
-let dockerContainers = [];
-const basePort = 5000;
+// Configuration constants
+const PERMANENT_INSTANCE_PORT = 5000;
+const ADDITIONAL_INSTANCE_START_PORT = 5001;
+const CONNECTION_COOLDOWN_MS = 10000;
+const MAX_CONCURRENT_CONNECTIONS = 3;
+const SOCKET_TIMEOUT_MS = 30000;
+const CONNECTION_RESET_THRESHOLD = 3;
+
+// Instance registry to track state
+let instanceRegistry = {
+  isPermanentInstanceRunning: false,
+  permanentInstanceId: null,
+  additionalInstances: []
+};
+
+// Track instance health
+let instanceHealthStatus = [];
+
+// Connection pools for each instance
+let connectionPools = {};
+
+// Create a custom http agent with proper settings
+const createHttpAgent = (instanceIndex) => {
+  return new http.Agent({
+    keepAlive: true,
+    maxSockets: MAX_CONCURRENT_CONNECTIONS,
+    maxFreeSockets: 2,
+    timeout: SOCKET_TIMEOUT_MS,
+    freeSocketTimeout: 15000,
+    maxTotalSockets: MAX_CONCURRENT_CONNECTIONS * 2,
+    scheduling: 'lifo',
+    name: `instance-${instanceIndex}`
+  });
+};
+
+// Create an axios instance with proper error handling
+function createAxiosInstance(instanceIndex) {
+  // Create or get the pool for this instance
+  if (!connectionPools[instanceIndex]) {
+    connectionPools[instanceIndex] = createHttpAgent(instanceIndex);
+  }
+  
+  return axios.create({
+    httpAgent: connectionPools[instanceIndex],
+    timeout: 45000,
+    maxRedirects: 5,
+    validateStatus: status => status < 500
+  });
+}
+
+// Reset connection pool for an instance
+function resetConnectionPool(instanceIndex) {
+  if (connectionPools[instanceIndex]) {
+    mainWindow.webContents.send('log', `Resetting connection pool for instance #${instanceIndex+1}`);
+    
+    // Destroy the old agent and create a new one
+    connectionPools[instanceIndex].destroy();
+    connectionPools[instanceIndex] = createHttpAgent(instanceIndex);
+  }
+}
+
+// Check if a port is already in use
+async function isPortInUse(port) {
+  return new Promise((resolve) => {
+    const tester = require('net').createServer()
+      .once('error', () => resolve(true)) // Port is in use
+      .once('listening', () => {
+        tester.once('close', () => resolve(false)) // Port is free
+              .close();
+      })
+      .listen(port);
+  });
+}
+
+// Check if the API is running on a specific port
+async function checkApiRunning(port = PERMANENT_INSTANCE_PORT) {
+  try {
+    // First try DNS resolution to ensure network is working
+    await dns.lookup('localhost');
+    
+    // Use a fresh axios instance with short timeout for checks
+    const axiosInstance = axios.create({
+      timeout: 3000,
+      validateStatus: () => true
+    });
+    
+    const response = await axiosInstance.get(`http://localhost:${port}`);
+    return response.status < 500;
+  } catch (error) {
+    if (error.code === 'ECONNREFUSED') {
+      return false;
+    }
+    console.error(`Error checking API on port ${port}:`, error.message);
+    return false;
+  }
+}
+
+// Enhanced retry with circuit breaker
+async function enhancedRetryRequest(fn, instanceIndex, maxRetries = 3, initialDelay = 1000) {
+  let consecutiveErrors = 0;
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await fn();
+      consecutiveErrors = 0; // Reset on success
+      return result;
+    } catch (error) {
+      lastError = error;
+      consecutiveErrors++;
+      
+      console.log(`Retry ${attempt}/${maxRetries}: ${error.message}`);
+      
+      // If we've seen many errors, reset the connection pool
+      if (consecutiveErrors >= CONNECTION_RESET_THRESHOLD) {
+        resetConnectionPool(instanceIndex);
+        consecutiveErrors = 0;
+      }
+      
+      // Don't wait on the last attempt
+      if (attempt < maxRetries) {
+        // Exponential backoff with jitter
+        const backoff = initialDelay * Math.pow(1.5, attempt - 1) * (0.9 + Math.random() * 0.2);
+        await new Promise(resolve => setTimeout(resolve, backoff));
+      }
+    }
+  }
+  
+  // All retries failed, throw the last error
+  throw lastError;
+}
+
+// Wait for sockets to cool down before continuing
+async function waitForSocketsCooldown(ms = CONNECTION_COOLDOWN_MS) {
+  mainWindow.webContents.send('log', `Waiting ${ms/1000} seconds for connections to close...`);
+  await new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Initialize health tracking for instances
+function initializeInstanceHealth(instanceCount) {
+  instanceHealthStatus = [];
+  for (let i = 0; i < instanceCount; i++) {
+    instanceHealthStatus.push({
+      consecutiveFailures: 0,
+      totalRequests: 0,
+      successfulRequests: 0,
+      isHealthy: true
+    });
+  }
+}
+
+// Update health status for an instance
+function updateInstanceHealth(instanceIndex, success) {
+  if (!instanceHealthStatus[instanceIndex]) return;
+  
+  instanceHealthStatus[instanceIndex].totalRequests++;
+  
+  if (success) {
+    instanceHealthStatus[instanceIndex].successfulRequests++;
+    instanceHealthStatus[instanceIndex].consecutiveFailures = 0;
+  } else {
+    instanceHealthStatus[instanceIndex].consecutiveFailures++;
+    
+    // Mark instance as unhealthy if too many consecutive failures
+    if (instanceHealthStatus[instanceIndex].consecutiveFailures >= 5) {
+      if (instanceHealthStatus[instanceIndex].isHealthy) {
+        instanceHealthStatus[instanceIndex].isHealthy = false;
+        mainWindow.webContents.send('log', `Instance #${instanceIndex+1} marked as unhealthy after 5 consecutive failures`, 'error');
+      }
+    }
+  }
+}
+
+// Check if an instance is healthy
+function isInstanceHealthy(instanceIndex) {
+  return instanceHealthStatus[instanceIndex] && instanceHealthStatus[instanceIndex].isHealthy;
+}
 
 // Create the main application window
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 800,
-    height: 700,
+    height: 650,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -29,38 +207,101 @@ function createWindow() {
   mainWindow.loadFile('index.html');
 }
 
-app.whenReady().then(() => {
-  createWindow();
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-// Make sure to clean up Docker containers on app exit
-app.on('before-quit', async (event) => {
-  if (dockerContainers.length > 0) {
-    event.preventDefault();
-    await stopAllDockerContainers();
-    app.quit();
-  }
-});
-
-// Start multiple Docker containers
-async function startDockerContainers(count) {
-  // First stop any existing containers
-  await stopAllDockerContainers();
+// Start permanent instance if needed
+async function ensurePermanentInstanceRunning() {
+  // Check if permanent instance is already running
+  const isPermanentRunning = await checkApiRunning(PERMANENT_INSTANCE_PORT);
   
+  if (isPermanentRunning) {
+    mainWindow.webContents.send('log', 'Permanent API instance already running ✓', 'success');
+    instanceRegistry.isPermanentInstanceRunning = true;
+    return true;
+  }
+  
+  // Start the permanent instance
+  try {
+    mainWindow.webContents.send('log', 'Starting permanent API instance...');
+    
+    const containerId = await new Promise((resolve, reject) => {
+      exec(`docker run -d --rm -p ${PERMANENT_INSTANCE_PORT}:5000 ghcr.io/danbooru/autotagger`, (error, stdout, stderr) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(stdout.trim());
+      });
+    });
+    
+    instanceRegistry.permanentInstanceId = containerId;
+    instanceRegistry.isPermanentInstanceRunning = true;
+    
+    // Allow time for container to fully initialize
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    // Verify it's actually running
+    const isRunning = await checkApiRunning(PERMANENT_INSTANCE_PORT);
+    if (!isRunning) {
+      throw new Error("Container started but API didn't initialize properly");
+    }
+    
+    mainWindow.webContents.send('log', 'Permanent API instance started successfully ✓', 'success');
+    return true;
+  } catch (error) {
+    mainWindow.webContents.send('log', `Failed to start permanent API instance: ${error.message}`, 'error');
+    instanceRegistry.isPermanentInstanceRunning = false;
+    return false;
+  }
+}
+
+// Start additional Docker containers
+async function startAdditionalContainers(count) {
   const containers = [];
   const endpoints = [];
   
-  mainWindow.webContents.send('log', `Starting ${count} API instances...`);
+  // Add the permanent instance first
+  await ensurePermanentInstanceRunning();
+  endpoints.push(`http://localhost:${PERMANENT_INSTANCE_PORT}/evaluate`);
   
-  // Start Docker containers
-  for (let i = 0; i < count; i++) {
-    const port = basePort + i;
+  if (count <= 1) {
+    return { containers, endpoints };
+  }
+  
+  // First stop any previous additional containers
+  await stopAdditionalContainers();
+  
+  mainWindow.webContents.send('log', `Starting ${count-1} additional API instances...`);
+  
+  // Calculate system resources
+  const totalMemoryGB = Math.round(os.totalmem() / (1024 * 1024 * 1024));
+  const maxRecommendedInstances = Math.max(1, Math.floor(totalMemoryGB / 4));
+  
+  if (count > maxRecommendedInstances) {
+    mainWindow.webContents.send('log', `Warning: Starting ${count} instances may exceed system resources (${totalMemoryGB}GB RAM detected)`, 'warning');
+  }
+  
+  // Start additional Docker containers
+  for (let i = 0; i < count - 1; i++) {
+    const port = ADDITIONAL_INSTANCE_START_PORT + i;
+    
+    // Check if port is already in use
+    const portInUse = await isPortInUse(port);
+    if (portInUse) {
+      try {
+        const apiRunning = await checkApiRunning(port);
+        if (apiRunning) {
+          mainWindow.webContents.send('log', `API already running on port ${port}, using existing instance`);
+          endpoints.push(`http://localhost:${port}/evaluate`);
+          continue;
+        } else {
+          mainWindow.webContents.send('log', `Port ${port} is in use but not by the API, skipping`, 'error');
+          continue;
+        }
+      } catch (error) {
+        mainWindow.webContents.send('log', `Error checking port ${port}: ${error.message}`, 'error');
+        continue;
+      }
+    }
+    
     try {
       // Run Docker container in detached mode
       const containerId = await new Promise((resolve, reject) => {
@@ -74,20 +315,19 @@ async function startDockerContainers(count) {
       });
       
       containers.push(containerId);
+      instanceRegistry.additionalInstances.push({ containerId, port });
       endpoints.push(`http://localhost:${port}/evaluate`);
-      mainWindow.webContents.send('log', `Started API instance #${i+1} on port ${port}`);
+      mainWindow.webContents.send('log', `Started additional API instance #${i+2} on port ${port}`);
       
-      // Wait a second between starts to avoid Docker issues
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Wait a bit between starts to avoid Docker issues
+      await new Promise(resolve => setTimeout(resolve, 2000));
     } catch (error) {
       mainWindow.webContents.send('log', `Failed to start API instance on port ${port}: ${error.message}`, 'error');
     }
   }
   
-  dockerContainers = containers;
-  
-  if (containers.length === 0) {
-    throw new Error("Failed to start any API instances");
+  if (endpoints.length <= 1) {
+    mainWindow.webContents.send('log', `Warning: Failed to start any additional API instances`, 'warning');
   }
   
   return {
@@ -96,15 +336,21 @@ async function startDockerContainers(count) {
   };
 }
 
-// Stop all running Docker containers
-async function stopAllDockerContainers() {
-  const promises = dockerContainers.map(containerId => {
+// Stop only additional containers, leave permanent one running
+async function stopAdditionalContainers() {
+  if (instanceRegistry.additionalInstances.length === 0) {
+    return;
+  }
+  
+  mainWindow.webContents.send('log', `Stopping ${instanceRegistry.additionalInstances.length} additional API instances...`);
+  
+  const promises = instanceRegistry.additionalInstances.map(instance => {
     return new Promise(resolve => {
-      exec(`docker stop ${containerId}`, (error) => {
+      exec(`docker stop ${instance.containerId}`, (error) => {
         if (error) {
-          mainWindow.webContents.send('log', `Error stopping container ${containerId.substring(0, 8)}: ${error.message}`, 'error');
+          mainWindow.webContents.send('log', `Error stopping container on port ${instance.port}: ${error.message}`, 'error');
         } else {
-          mainWindow.webContents.send('log', `Stopped API instance ${containerId.substring(0, 8)}`);
+          mainWindow.webContents.send('log', `Stopped API instance on port ${instance.port}`);
         }
         resolve();
       });
@@ -112,8 +358,87 @@ async function stopAllDockerContainers() {
   });
   
   await Promise.all(promises);
-  dockerContainers = [];
+  instanceRegistry.additionalInstances = [];
+  
+  // Wait for ports to be released
+  await new Promise(resolve => setTimeout(resolve, 3000));
 }
+
+// Shutdown all containers (used on app exit)
+async function shutdownAllContainers() {
+  // First stop additional containers
+  await stopAdditionalContainers();
+  
+  // Then stop permanent instance if it exists
+  if (instanceRegistry.permanentInstanceId) {
+    try {
+      await new Promise((resolve, reject) => {
+        exec(`docker stop ${instanceRegistry.permanentInstanceId}`, (error) => {
+          if (error) {
+            mainWindow.webContents.send('log', `Error stopping permanent container: ${error.message}`, 'error');
+          } else {
+            mainWindow.webContents.send('log', `Stopped permanent API instance`);
+          }
+          resolve();
+        });
+      });
+      
+      instanceRegistry.permanentInstanceId = null;
+      instanceRegistry.isPermanentInstanceRunning = false;
+    } catch (error) {
+      console.error('Error stopping permanent container:', error);
+    }
+  }
+}
+
+app.whenReady().then(async () => {
+  createWindow();
+  
+  // Start permanent API instance
+  try {
+    await ensurePermanentInstanceRunning();
+  } catch (error) {
+    console.error('Error starting permanent API instance:', error);
+  }
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+// Make sure to clean up Docker containers on app exit
+app.on('before-quit', async (event) => {
+  if (instanceRegistry.additionalInstances.length > 0 || instanceRegistry.permanentInstanceId) {
+    event.preventDefault();
+    await waitForSocketsCooldown();
+    await shutdownAllContainers();
+    app.quit();
+  }
+});
+
+// Handle unexpected termination
+process.on('SIGINT', async () => {
+  try {
+    await waitForSocketsCooldown();
+    await shutdownAllContainers();
+  } catch (error) {
+    console.error('Error stopping containers:', error);
+  }
+  process.exit(0);
+});
+
+process.on('uncaughtException', async (error) => {
+  console.error('Uncaught exception:', error);
+  try {
+    await waitForSocketsCooldown();
+    await shutdownAllContainers();
+  } catch (stopError) {
+    console.error('Error stopping containers:', stopError);
+  }
+  process.exit(1);
+});
 
 // Handle folder selection for single folder
 ipcMain.handle('select-folder', async () => {
@@ -211,7 +536,8 @@ ipcMain.handle('analyze-folder', async (event, inputFolder) => {
 // Check API connection
 ipcMain.handle('check-api-connection', async (event, apiEndpoint) => {
   try {
-    await axios.get(apiEndpoint.replace('/evaluate', ''), {
+    const axiosInstance = createAxiosInstance(0); // Use instance 0 for checks
+    await axiosInstance.get(apiEndpoint.replace('/evaluate', ''), {
       timeout: 5000 // 5 second timeout
     });
     return { success: true };
@@ -298,157 +624,246 @@ ipcMain.on('cancel-processing', () => {
   mainWindow.webContents.send('processing-canceled');
 });
 
-// Distribute images among instances
-function distributeImages(imageFiles, instanceCount) {
-  const distributions = [];
+// Process with multiple instances using a shared queue approach
+async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, apiEndpoints) {
+  // Create a shared queue of all images to process
+  const imageQueue = [...imageFiles]; // Make a copy of the imageFiles array to use as our queue
   
-  // Create bucket for each instance
-  for (let i = 0; i < instanceCount; i++) {
-    distributions.push([]);
+  // Create an array to track results
+  let processedCount = 0;
+  let success = 0;
+  let failed = 0;
+  let processedLog = [];
+  
+  // Failed images to retry
+  let failedImages = [];
+  
+  // Update overall progress
+  function updateOverallProgress() {
+    mainWindow.webContents.send('progress-folder', {
+      current: processedCount,
+      total: imageFiles.length,
+      folder: folderPath,
+      file: ''
+    });
   }
   
-  // Distribute images evenly
-  imageFiles.forEach((file, index) => {
-    const instanceIndex = index % instanceCount;
-    distributions[instanceIndex].push(file);
-  });
-  
-  return distributions;
-}
-
-// Process with multiple instances
-async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, apiEndpoints, concurrency) {
-  // Distribute images among instances
-  const distributions = distributeImages(imageFiles, apiEndpoints.length);
-  
-  // Process each distribution with its assigned endpoint
-  const instancePromises = distributions.map((instanceFiles, index) => {
-    if (instanceFiles.length === 0) return { success: 0, failed: 0, processedLog: [] };
+  // Create a function for each instance to process images from the queue
+  async function instanceWorker(endpoint, instanceIndex) {
+    mainWindow.webContents.send('log', `Instance #${instanceIndex+1} started on ${endpoint}`);
     
-    return new Promise(async (resolve) => {
-      const endpoint = apiEndpoints[index];
-      mainWindow.webContents.send('log', `Instance #${index+1} processing ${instanceFiles.length} images from ${path.basename(folderPath)}`);
+    let instanceProcessed = 0;
+    let instanceSuccess = 0;
+    let instanceFailed = 0;
+    let instanceLog = [];
+    let consecutiveErrors = 0;
+    
+    // Create axios instance with proper connection management
+    const axiosInstance = createAxiosInstance(instanceIndex);
+    
+    // Keep processing until the queue is empty or processing is canceled
+    while (imageQueue.length > 0 && !processingState.isCanceled) {
+      // Check if instance is still healthy
+      if (!isInstanceHealthy(instanceIndex)) {
+        mainWindow.webContents.send('log', `Instance #${instanceIndex+1} is no longer healthy. Stopping this worker.`, 'error');
+        break;
+      }
       
-      let processedCount = 0;
-      let success = 0;
-      let failed = 0;
-      let processedLog = [];
+      // Handle pause state
+      if (processingState.isPaused) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        continue;
+      }
       
-      // Process batches until all assigned images are done
-      while (processedCount < instanceFiles.length && !processingState.isCanceled) {
-        if (processingState.isPaused) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-          continue;
+      // Take a batch of images from the front of the queue
+      const batchSize = Math.min(MAX_CONCURRENT_CONNECTIONS, imageQueue.length);
+      const batchFiles = [];
+      
+      for (let i = 0; i < batchSize; i++) {
+        if (imageQueue.length > 0) {
+          batchFiles.push(imageQueue.shift()); // Remove from front of queue
         }
-        
-        // Update progress for this instance
-        mainWindow.webContents.send('progress-instance', {
-          instance: index,
-          current: processedCount,
-          total: instanceFiles.length,
-          folder: folderPath
-        });
-        
-        // Process batch for this instance
-        const batchSize = Math.min(concurrency, instanceFiles.length - processedCount);
-        const batchFiles = instanceFiles.slice(processedCount, processedCount + batchSize);
-        
-        const batchPromises = batchFiles.map(async (imageFile) => {
-          try {
-            const imagePath = path.join(folderPath, imageFile);
-            const jsonFileName = path.basename(imageFile, path.extname(imageFile)) + '.json';
-            const jsonFilePath = path.join(jsonFolder, jsonFileName);
-            
-            // Create form data
-            const formData = new FormData();
-            formData.append('file', fs.createReadStream(imagePath));
-            formData.append('format', 'json');
-            
-            // Send request
-            const response = await axios.post(endpoint, formData, {
+      }
+      
+      if (batchFiles.length === 0) break; // Safeguard
+      
+      // Update instance progress
+      mainWindow.webContents.send('progress-instance', {
+        instance: instanceIndex,
+        current: instanceProcessed,
+        total: instanceProcessed + batchFiles.length + (imageQueue.length / apiEndpoints.length),
+        folder: folderPath
+      });
+      
+      // Process this batch of images
+      const batchPromises = batchFiles.map(async (imageFile) => {
+        try {
+          const imagePath = path.join(folderPath, imageFile);
+          const jsonFileName = path.basename(imageFile, path.extname(imageFile)) + '.json';
+          const jsonFilePath = path.join(jsonFolder, jsonFileName);
+          
+          // Create form data
+          const formData = new FormData();
+          formData.append('file', fs.createReadStream(imagePath));
+          formData.append('format', 'json');
+          
+          // Use enhanced retry with circuit breaker
+          const response = await enhancedRetryRequest(async () => {
+            return await axiosInstance.post(endpoint, formData, {
               headers: {
                 ...formData.getHeaders(),
               },
               maxBodyLength: Infinity,
-              maxContentLength: Infinity,
-              timeout: 30000
+              maxContentLength: Infinity
             });
-            
-            // Save JSON
-            fs.writeFileSync(jsonFilePath, JSON.stringify(response.data, null, 2));
-            
-            mainWindow.webContents.send('log', `Instance #${index+1} processed ${imageFile} ✓`);
-            success++;
-            
-            return {
-              success: true,
-              imagePath,
-              timestamp: new Date().toISOString(),
-              status: 'success'
-            };
-          } catch (error) {
-            mainWindow.webContents.send('log', `Instance #${index+1} error processing ${imageFile}: ${error.message} ✗`);
-            failed++;
-            
-            return {
-              success: false,
-              imagePath: path.join(folderPath, imageFile),
-              timestamp: new Date().toISOString(),
-              status: 'failed',
-              error: error.message
-            };
+          }, instanceIndex, 3, 2000);
+          
+          // Check for error status codes
+          if (response.status >= 400) {
+            throw new Error(`API returned error status: ${response.status}`);
           }
-        });
-        
-        // Wait for this batch to complete
-        const batchResults = await Promise.all(batchPromises);
-        processedLog = processedLog.concat(batchResults);
-        processedCount += batchSize;
-        
-        // Update overall progress for this instance
-        mainWindow.webContents.send('progress-instance', {
-          instance: index,
-          current: processedCount,
-          total: instanceFiles.length,
-          folder: folderPath
-        });
-      }
-      
-      resolve({
-        success,
-        failed,
-        processedLog
+          
+          // Save JSON
+          fs.writeFileSync(jsonFilePath, JSON.stringify(response.data, null, 2));
+          
+          mainWindow.webContents.send('log', `Instance #${instanceIndex+1} processed ${imageFile} ✓`);
+          instanceSuccess++;
+          consecutiveErrors = 0; // Reset error counter on success
+          updateInstanceHealth(instanceIndex, true);
+          
+          return {
+            success: true,
+            imagePath,
+            timestamp: new Date().toISOString(),
+            status: 'success'
+          };
+        } catch (error) {
+          mainWindow.webContents.send('log', `Instance #${instanceIndex+1} error processing ${imageFile}: ${error.message} ✗`);
+          instanceFailed++;
+          consecutiveErrors++;
+          updateInstanceHealth(instanceIndex, false);
+          
+          // If too many consecutive errors, reset connection
+          if (consecutiveErrors >= CONNECTION_RESET_THRESHOLD) {
+            mainWindow.webContents.send('log', `Too many consecutive errors for Instance #${instanceIndex+1}. Resetting connection...`, 'warning');
+            resetConnectionPool(instanceIndex);
+            consecutiveErrors = 0;
+            
+            // Add failed image back to the queue for another attempt
+            failedImages.push(imageFile);
+          }
+          
+          return {
+            success: false,
+            imagePath: path.join(folderPath, imageFile),
+            timestamp: new Date().toISOString(),
+            status: 'failed',
+            error: error.message
+          };
+        }
       });
-    });
+      
+      // Wait for this batch to complete
+      const batchResults = await Promise.all(batchPromises);
+      instanceLog = instanceLog.concat(batchResults);
+      instanceProcessed += batchFiles.length;
+      
+      // Update instance progress again after batch completion
+      mainWindow.webContents.send('progress-instance', {
+        instance: instanceIndex,
+        current: instanceProcessed,
+        total: instanceProcessed + (imageQueue.length / apiEndpoints.length),
+        folder: folderPath
+      });
+      
+      // Update overall counters
+      processedCount += batchFiles.length;
+      success += batchResults.filter(r => r.success).length;
+      failed += batchResults.filter(r => !r.success).length;
+      
+      // Update overall progress
+      updateOverallProgress();
+      
+      // Small delay between batches to prevent overwhelming the API
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    mainWindow.webContents.send('log', `Instance #${instanceIndex+1} finished. Processed: ${instanceProcessed}, Success: ${instanceSuccess}, Failed: ${instanceFailed}`);
+    
+    return {
+      instanceProcessed,
+      instanceSuccess,
+      instanceFailed,
+      instanceLog
+    };
+  }
+  
+  // Start all instance workers
+  const instancePromises = apiEndpoints.map((endpoint, index) => {
+    // Check if instance is healthy
+    if (isInstanceHealthy(index)) {
+      return instanceWorker(endpoint, index);
+    } else {
+      // Skip unhealthy instances
+      mainWindow.webContents.send('log', `Skipping unhealthy instance #${index+1}`);
+      return Promise.resolve({
+        instanceProcessed: 0,
+        instanceSuccess: 0,
+        instanceFailed: 0,
+        instanceLog: []
+      });
+    }
   });
   
   // Wait for all instances to finish
-  const results = await Promise.all(instancePromises);
+  const instanceResults = await Promise.all(instancePromises);
   
-  // Combine results
-  const combinedResults = {
-    success: 0,
-    failed: 0,
-    processedLog: []
-  };
+  // Process any remaining failed images
+  if (failedImages.length > 0 && !processingState.isCanceled) {
+    mainWindow.webContents.send('log', `Retrying ${failedImages.length} failed images...`, 'warning');
+    
+    // Add failed images back to the queue
+    imageQueue.push(...failedImages);
+    
+    // If we have any healthy instances, process the remaining images
+    if (apiEndpoints.length > 0) {
+      const retryResults = await processWithMultipleInstances(
+        folderPath,
+        failedImages,
+        jsonFolder,
+        apiEndpoints
+      );
+      
+      // Update counters with retry results
+      success += retryResults.success;
+      failed = retryResults.failed;
+      processedLog = processedLog.concat(retryResults.processedLog);
+    }
+  }
   
-  results.forEach(result => {
-    combinedResults.success += result.success;
-    combinedResults.failed += result.failed;
-    combinedResults.processedLog = combinedResults.processedLog.concat(result.processedLog);
+  // Combine all logs
+  instanceResults.forEach(result => {
+    processedLog = processedLog.concat(result.instanceLog);
   });
   
-  return combinedResults;
+  return {
+    success,
+    failed,
+    processedLog
+  };
 }
 
 // Process a batch of images with a single API
-async function processBatch(folderPath, imageFiles, jsonFolder, apiEndpoint, startIndex, batchSize) {
+async function processBatch(folderPath, imageFiles, jsonFolder, apiEndpoint, startIndex, batchSize, instanceIndex = 0) {
   const batchPromises = [];
   const batchResults = {
     success: 0,
     failed: 0,
     processedLog: []
   };
+  
+  // Create axios instance with proper connection management
+  const axiosInstance = createAxiosInstance(instanceIndex);
   
   const endIndex = Math.min(startIndex + batchSize, imageFiles.length);
   
@@ -476,15 +891,21 @@ async function processBatch(folderPath, imageFiles, jsonFolder, apiEndpoint, sta
         formData.append('file', fs.createReadStream(imagePath));
         formData.append('format', 'json');
         
-        // Send request
-        const response = await axios.post(apiEndpoint, formData, {
-          headers: {
-            ...formData.getHeaders(),
-          },
-          maxBodyLength: Infinity,
-          maxContentLength: Infinity,
-          timeout: 30000
-        });
+        // Use enhanced retry with circuit breaker
+        const response = await enhancedRetryRequest(async () => {
+          return await axiosInstance.post(apiEndpoint, formData, {
+            headers: {
+              ...formData.getHeaders(),
+            },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity
+          });
+        }, instanceIndex, 3, 2000);
+        
+        // Check for error status codes
+        if (response.status >= 400) {
+          throw new Error(`API returned error status: ${response.status}`);
+        }
         
         // Save JSON
         fs.writeFileSync(jsonFilePath, JSON.stringify(response.data, null, 2));
@@ -522,7 +943,7 @@ async function processBatch(folderPath, imageFiles, jsonFolder, apiEndpoint, sta
 }
 
 // Process a single folder and its subfolders if requested
-async function processFolder(folderPath, apiEndpoints, confidenceThreshold, processMode, includeSubfolders, concurrency) {
+async function processFolder(folderPath, apiEndpoints, confidenceThreshold, processMode, includeSubfolders) {
   try {
     // Get all files in this folder
     const allFiles = fs.readdirSync(folderPath);
@@ -600,15 +1021,14 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
     
     // Choose processing method based on number of API endpoints
     if (apiEndpoints.length > 1) {
-      // Process with multiple instances
-      mainWindow.webContents.send('log', `Using ${apiEndpoints.length} API instances for ${path.basename(folderPath)}`);
+      // Process with multiple instances using shared queue
+      mainWindow.webContents.send('log', `Using ${apiEndpoints.length} API instances with shared queue for ${path.basename(folderPath)}`);
       
       const multiResults = await processWithMultipleInstances(
         folderPath,
         filesToProcess,
         jsonFolder,
-        apiEndpoints,
-        concurrency
+        apiEndpoints
       );
       
       processedCount = multiResults.processedLog.length;
@@ -650,14 +1070,15 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
           jsonFolder, 
           apiEndpoints[0], // Use the first (and only) endpoint
           processedCount, 
-          concurrency
+          MAX_CONCURRENT_CONNECTIONS,
+          0 // Use instance index 0 for the permanent instance
         );
         
         // Update counters
         success += batchResults.success;
         failed += batchResults.failed;
         processedLog = processedLog.concat(batchResults.processedLog);
-        processedCount += Math.min(concurrency, filesToProcess.length - processedCount);
+        processedCount += Math.min(MAX_CONCURRENT_CONNECTIONS, filesToProcess.length - processedCount);
         
         // Update overall progress after the batch
         mainWindow.webContents.send('progress-folder', {
@@ -695,8 +1116,7 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
           apiEndpoints, 
           confidenceThreshold, 
           processMode, 
-          includeSubfolders,
-          concurrency
+          includeSubfolders
         );
         
         // Add subfolder results to totals
@@ -722,7 +1142,6 @@ ipcMain.handle('process-images', async (event, data) => {
     confidenceThreshold, 
     processMode, 
     includeSubfolders,
-    concurrency,
     apiInstances
   } = data;
   
@@ -732,21 +1151,21 @@ ipcMain.handle('process-images', async (event, data) => {
     isCanceled: false
   };
   
-  let apiEndpoints = [apiEndpoint];
-  let containersStarted = false;
+  let apiEndpoints = [];
   
   try {
-    // Start multiple API instances if requested
-    if (apiInstances > 1) {
-      try {
-        const result = await startDockerContainers(apiInstances);
-        apiEndpoints = result.endpoints;
-        containersStarted = true;
-        mainWindow.webContents.send('log', `Successfully started ${apiEndpoints.length} API instances`);
-      } catch (dockerError) {
-        mainWindow.webContents.send('log', `Failed to start additional API instances: ${dockerError.message}. Using original endpoint.`, 'error');
-      }
+    // Ensure permanent instance is running
+    const permanentInstanceOk = await ensurePermanentInstanceRunning();
+    if (!permanentInstanceOk) {
+      throw new Error("Failed to start or connect to permanent API instance");
     }
+    
+    // Start all API instances
+    const result = await startAdditionalContainers(apiInstances);
+    apiEndpoints = result.endpoints;
+    
+    // Initialize health tracking
+    initializeInstanceHealth(apiEndpoints.length);
     
     mainWindow.webContents.send('log', `Starting to process ${folders.length} folders with ${apiEndpoints.length} API instance(s)...`);
     
@@ -779,8 +1198,7 @@ ipcMain.handle('process-images', async (event, data) => {
         apiEndpoints,
         confidenceThreshold,
         processMode,
-        includeSubfolders,
-        concurrency
+        includeSubfolders
       );
       
       // Add to totals
@@ -803,10 +1221,20 @@ ipcMain.handle('process-images', async (event, data) => {
     mainWindow.webContents.send('log', `Error: ${error.message}`);
     throw error;
   } finally {
-    // Stop Docker containers if we started them
-    if (containersStarted) {
-      mainWindow.webContents.send('log', `Stopping API instances...`);
-      await stopAllDockerContainers();
+    // Wait for connections to cool down
+    await waitForSocketsCooldown(CONNECTION_COOLDOWN_MS);
+    
+    // Stop additional containers, keep permanent one running
+    await stopAdditionalContainers();
+    
+    // Reset connection pools
+    for (let i = 0; i < connectionPools.length; i++) {
+      resetConnectionPool(i);
+    }
+    
+    // Force Node.js to clean up sockets
+    if (global.gc) {
+      global.gc();
     }
   }
 });
