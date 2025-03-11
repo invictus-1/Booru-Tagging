@@ -162,12 +162,22 @@
       font-size: 12px;
       font-weight: bold;
     }
-    /* New styles for concurrency and API instances control */
-    .concurrency-setting {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    /* Styles for instance progress tracking */
+    .instances-progress {
       margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .instance-progress {
+      font-size: 12px;
+      padding: 3px 5px;
+      background-color: #f0f0f0;
+      border-radius: 3px;
+    }
+    .instance-progress.active {
+      background-color: #e3f2fd;
+      border-left: 3px solid #2196F3;
     }
     .hint {
       font-size: 12px;
@@ -178,9 +188,11 @@
       color: #f57c00;
       font-weight: bold;
     }
-    .instance-progress {
-      margin-top: 5px;
-      font-size: 12px;
+    .concurrency-setting {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
     }
   </style>
 </head>
@@ -215,28 +227,16 @@
       </div>
     </div>
     
-    <!-- New section for processing speed control -->
-    <div class="form-group">
-      <label for="concurrency">Processing Speed:</label>
-      <div class="concurrency-setting">
-        <input type="range" id="concurrency" min="1" max="20" value="5" step="1">
-        <span id="concurrencyValue">5</span> images at once
-      </div>
-      <div class="hint">
-        Higher values = faster processing but higher CPU/memory usage
-      </div>
-    </div>
-    
-    <!-- New section for API instances control -->
+    <!-- API instances control -->
     <div class="form-group">
       <label for="apiInstances">API Instances:</label>
       <div class="concurrency-setting">
-        <input type="range" id="apiInstances" min="1" max="8" value="1" step="1">
+        <input type="range" id="apiInstances" min="1" max="3" value="1" step="1">
         <span id="apiInstancesValue">1</span> instance(s)
       </div>
       <div class="hint warning">
-        <strong>Warning:</strong> Running multiple API instances requires Docker and uses significant system 
-        resources. Each instance may require 2-4GB of RAM.
+        <strong>Note:</strong> Running multiple API instances requires Docker and uses significant system 
+        resources. Each instance requires about 2GB of RAM. Maximum 3 instances recommended.
       </div>
     </div>
     
@@ -264,7 +264,7 @@
       <div class="progress-bar"></div>
       <div class="progress-text">0%</div>
       <div class="overall-progress">Preparing...</div>
-      <div class="instance-progress"></div>
+      <div class="instances-progress"></div>
       <div class="progress-controls">
         <button id="pauseResumeBtn">Pause</button>
         <button id="cancelBtn">Cancel</button>
@@ -290,8 +290,6 @@
     const pauseResumeBtn = document.getElementById('pauseResumeBtn');
     const cancelBtn = document.getElementById('cancelBtn');
     const logElement = document.getElementById('log');
-    const concurrencySlider = document.getElementById('concurrency');
-    const concurrencyValue = document.getElementById('concurrencyValue');
     const apiInstancesSlider = document.getElementById('apiInstances');
     const apiInstancesValue = document.getElementById('apiInstancesValue');
     
@@ -300,17 +298,12 @@
     let isPaused = false;
     let selectedFolders = [];
     
-    // Concurrency slider listener
-    concurrencySlider.addEventListener('input', function() {
-      concurrencyValue.textContent = this.value;
-    });
-    
     // API instances slider listener
     apiInstancesSlider.addEventListener('input', function() {
       apiInstancesValue.textContent = this.value;
       
       // Show warning for high values
-      if (parseInt(this.value) >= 4) {
+      if (parseInt(this.value) >= 3) {
         addLog(`Warning: Running ${this.value} API instances may consume significant system resources!`, 'error');
       }
     });
@@ -523,6 +516,9 @@
       document.querySelector('.overall-progress').textContent = `Preparing to process ${selectedFolders.length} folders with ${apiInstances} API instance(s)...`;
       pauseResumeBtn.textContent = 'Pause';
       
+      // Clear previous instances progress
+      document.querySelector('.instances-progress').innerHTML = '';
+      
       // Clear log
       logElement.innerHTML = 'Starting processing...<br>';
       
@@ -533,7 +529,6 @@
           confidenceThreshold: parseFloat(confidenceThresholdInput.value),
           processMode: getProcessMode(),
           includeSubfolders: document.getElementById('includeSubfolders').checked,
-          concurrency: parseInt(concurrencySlider.value),
           apiInstances: apiInstances
         });
         
@@ -605,18 +600,33 @@
       progressText.textContent = `${percent}% (${data.current}/${data.total}) - ${data.file || ''}`;
     });
     
-    // Handle individual image progress (optional)
-    ipcRenderer.on('progress-item', (event, data) => {
-      // We don't update the UI for each item to avoid performance issues
-      // But we can use this to track specific images if needed
-    });
-    
-    // Handle instance progress
+    // Handle instance progress - updated for multiple instances display
     ipcRenderer.on('progress-instance', (event, data) => {
       const percent = Math.round((data.current / data.total) * 100);
-      const instanceEl = document.querySelector('.instance-progress');
-      if (instanceEl) {
+      const instancesContainer = document.querySelector('.instances-progress');
+      
+      if (instancesContainer) {
+        // Check if there's already an element for this instance
+        let instanceEl = document.getElementById(`instance-progress-${data.instance}`);
+        
+        // If not, create one
+        if (!instanceEl) {
+          instanceEl = document.createElement('div');
+          instanceEl.id = `instance-progress-${data.instance}`;
+          instanceEl.className = 'instance-progress';
+          instancesContainer.appendChild(instanceEl);
+        }
+        
+        // Update the progress information
         instanceEl.textContent = `Instance #${data.instance+1}: ${percent}% (${data.current}/${data.total})`;
+        
+        // Mark as active
+        instanceEl.className = 'instance-progress active';
+        
+        // Remove active class after a moment to create a visual pulse
+        setTimeout(() => {
+          if (instanceEl) instanceEl.className = 'instance-progress';
+        }, 300);
       }
     });
     
