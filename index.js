@@ -970,6 +970,14 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
       }
     }
     
+    // Add debug logging for subfolder detection
+    mainWindow.webContents.send('log', `Found ${subfolders.length} subfolders in ${path.basename(folderPath)}`);
+    if (subfolders.length > 0) {
+      let subfoldersStr = subfolders.map(sf => path.basename(sf)).join(', ');
+      if (subfoldersStr.length > 100) subfoldersStr = subfoldersStr.substring(0, 100) + '...';
+      mainWindow.webContents.send('log', `Subfolders: ${subfoldersStr}`);
+    }
+    
     // Create Json folder for this folder
     const jsonFolder = path.join(folderPath, 'Json');
     if (!fs.existsSync(jsonFolder)) {
@@ -982,141 +990,165 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
     if (processMode === 'all') {
       filesToProcess = imageFiles;
       mainWindow.webContents.send('log', `Processing all ${filesToProcess.length} images in ${path.basename(folderPath)}`);
+      
     } else if (processMode === 'new') {
-      const { processed } = checkMissingJsonFiles(folderPath);
-      filesToProcess = imageFiles.filter(file => {
-        const fullPath = path.join(folderPath, file);
-        return !processed.includes(fullPath);
-      });
-      mainWindow.webContents.send('log', `Processing ${filesToProcess.length} new images in ${path.basename(folderPath)}`);
-    } else if (processMode === 'missing') {
-      const missingFiles = [];
+      // For "new" images: Check if they have JSON files, if not, they're new
+      const newFiles = [];
+      let existingJsonCount = 0;
+      
       imageFiles.forEach(file => {
         const baseName = path.basename(file, path.extname(file));
         const jsonPath = path.join(jsonFolder, `${baseName}.json`);
-        if (!fs.existsSync(jsonPath)) {
+        
+        if (fs.existsSync(jsonPath)) {
+          existingJsonCount++;
+        } else {
+          newFiles.push(file);
+        }
+      });
+      
+      filesToProcess = newFiles;
+      mainWindow.webContents.send('log', `Found ${existingJsonCount} existing JSON files. Processing ${filesToProcess.length} new images in ${path.basename(folderPath)}`);
+      
+    } else if (processMode === 'missing') {
+      // For "missing" files: Same logic as "new" but different messaging
+      const missingFiles = [];
+      let jsonCount = 0;
+      
+      imageFiles.forEach(file => {
+        const baseName = path.basename(file, path.extname(file));
+        const jsonPath = path.join(jsonFolder, `${baseName}.json`);
+        
+        if (fs.existsSync(jsonPath)) {
+          jsonCount++;
+        } else {
           missingFiles.push(file);
         }
       });
+      
       filesToProcess = missingFiles;
-      mainWindow.webContents.send('log', `Processing ${filesToProcess.length} missing files in ${path.basename(folderPath)}`);
+      mainWindow.webContents.send('log', `Found ${jsonCount} existing JSON files. Processing ${filesToProcess.length} missing JSON files in ${path.basename(folderPath)}`);
     }
     
-    // Skip if no files to process
-    if (filesToProcess.length === 0) {
-      mainWindow.webContents.send('log', `No files to process in ${path.basename(folderPath)}`);
-      return {
-        folder: folderPath,
-        total: 0,
-        processed: 0,
-        success: 0,
-        failed: 0
-      };
-    }
-    
-    let processedCount = 0;
-    let success = 0;
-    let failed = 0;
-    let processedLog = [];
-    
-    // Choose processing method based on number of API endpoints
-    if (apiEndpoints.length > 1) {
-      // Process with multiple instances using shared queue
-      mainWindow.webContents.send('log', `Using ${apiEndpoints.length} API instances with shared queue for ${path.basename(folderPath)}`);
+    // Initialize result object
+    const result = {
+      folder: folderPath,
+      total: 0,
+      processed: 0,
+      success: 0,
+      failed: 0
+    };
+
+    // Only process files if there are any to process
+    if (filesToProcess.length > 0) {
+      mainWindow.webContents.send('log', `Processing ${filesToProcess.length} files in ${path.basename(folderPath)}`);
       
-      const multiResults = await processWithMultipleInstances(
-        folderPath,
-        filesToProcess,
-        jsonFolder,
-        apiEndpoints
-      );
+      let processedCount = 0;
+      let success = 0;
+      let failed = 0;
+      let processedLog = [];
       
-      processedCount = multiResults.processedLog.length;
-      success = multiResults.success;
-      failed = multiResults.failed;
-      processedLog = multiResults.processedLog;
-      
-      // Update overall progress
-      mainWindow.webContents.send('progress-folder', {
-        current: processedCount,
-        total: filesToProcess.length,
-        folder: folderPath,
-        file: ''
-      });
-    } else {
-      // Process with single instance in batches
-      mainWindow.webContents.send('log', `Using single API instance for ${path.basename(folderPath)}`);
-      
-      // Process in batches until all images are processed
-      while (processedCount < filesToProcess.length && !processingState.isCanceled) {
-        // Skip if paused
-        if (processingState.isPaused) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-          continue;
-        }
+      // Choose processing method based on number of API endpoints
+      if (apiEndpoints.length > 1) {
+        // Process with multiple instances using shared queue
+        mainWindow.webContents.send('log', `Using ${apiEndpoints.length} API instances with shared queue for ${path.basename(folderPath)}`);
         
-        // Update progress at the start of a new batch
-        mainWindow.webContents.send('progress-folder', {
-          current: processedCount,
-          total: filesToProcess.length,
-          folder: folderPath,
-          file: processedCount < filesToProcess.length ? filesToProcess[processedCount] : ''
-        });
-        
-        // Process a batch of images concurrently
-        const batchResults = await processBatch(
-          folderPath, 
-          filesToProcess, 
-          jsonFolder, 
-          apiEndpoints[0], // Use the first (and only) endpoint
-          processedCount, 
-          MAX_CONCURRENT_CONNECTIONS,
-          0 // Use instance index 0 for the permanent instance
+        const multiResults = await processWithMultipleInstances(
+          folderPath,
+          filesToProcess,
+          jsonFolder,
+          apiEndpoints
         );
         
-        // Update counters
-        success += batchResults.success;
-        failed += batchResults.failed;
-        processedLog = processedLog.concat(batchResults.processedLog);
-        processedCount += Math.min(MAX_CONCURRENT_CONNECTIONS, filesToProcess.length - processedCount);
+        processedCount = multiResults.processedLog.length;
+        success = multiResults.success;
+        failed = multiResults.failed;
+        processedLog = multiResults.processedLog;
         
-        // Update overall progress after the batch
+        // Update overall progress
         mainWindow.webContents.send('progress-folder', {
           current: processedCount,
           total: filesToProcess.length,
           folder: folderPath,
           file: ''
         });
+      } else {
+        // Process with single instance in batches
+        mainWindow.webContents.send('log', `Using single API instance for ${path.basename(folderPath)}`);
+        
+        // Process in batches until all images are processed
+        while (processedCount < filesToProcess.length && !processingState.isCanceled) {
+          // Skip if paused
+          if (processingState.isPaused) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            continue;
+          }
+          
+          // Update progress at the start of a new batch
+          mainWindow.webContents.send('progress-folder', {
+            current: processedCount,
+            total: filesToProcess.length,
+            folder: folderPath,
+            file: processedCount < filesToProcess.length ? filesToProcess[processedCount] : ''
+          });
+          
+          // Process a batch of images concurrently
+          const batchResults = await processBatch(
+            folderPath, 
+            filesToProcess, 
+            jsonFolder, 
+            apiEndpoints[0], // Use the first (and only) endpoint
+            processedCount, 
+            MAX_CONCURRENT_CONNECTIONS,
+            0 // Use instance index 0 for the permanent instance
+          );
+          
+          // Update counters
+          success += batchResults.success;
+          failed += batchResults.failed;
+          processedLog = processedLog.concat(batchResults.processedLog);
+          processedCount += Math.min(MAX_CONCURRENT_CONNECTIONS, filesToProcess.length - processedCount);
+          
+          // Update overall progress after the batch
+          mainWindow.webContents.send('progress-folder', {
+            current: processedCount,
+            total: filesToProcess.length,
+            folder: folderPath,
+            file: ''
+          });
+        }
       }
+      
+      // Save processing log
+      if (processedLog.length > 0) {
+        const totalLogged = saveProcessingLog(folderPath, processedLog);
+        mainWindow.webContents.send('log', `Updated log for ${path.basename(folderPath)} with ${totalLogged} entries`);
+      }
+      
+      // Update result with current folder's results
+      result.total = filesToProcess.length;
+      result.processed = processedCount;
+      result.success = success;
+      result.failed = failed;
+    } else {
+      mainWindow.webContents.send('log', `No files to process in ${path.basename(folderPath)}`);
     }
     
-    // Save processing log
-    if (processedLog.length > 0) {
-      const totalLogged = saveProcessingLog(folderPath, processedLog);
-      mainWindow.webContents.send('log', `Updated log for ${path.basename(folderPath)} with ${totalLogged} entries`);
-    }
-    
-    const result = {
-      folder: folderPath,
-      total: filesToProcess.length,
-      processed: processedCount,
-      success,
-      failed
-    };
-    
-    // Process subfolders if requested
+    // Process subfolders if requested - IMPROVED SECTION
     if (includeSubfolders && subfolders.length > 0 && !processingState.isCanceled) {
-      mainWindow.webContents.send('log', `Processing ${subfolders.length} subfolders in ${path.basename(folderPath)}`);
+      mainWindow.webContents.send('log', `Processing ${subfolders.length} subfolders in ${path.basename(folderPath)} (includeSubfolders=${includeSubfolders})...`);
       
       for (const subfolder of subfolders) {
         if (processingState.isCanceled) break;
+        
+        mainWindow.webContents.send('log', `--- Starting subfolder: ${path.basename(subfolder)} ---`);
         
         const subfolderResult = await processFolder(
           subfolder, 
           apiEndpoints, 
           confidenceThreshold, 
           processMode, 
-          includeSubfolders
+          includeSubfolders  // Keep recursive subfolder processing
         );
         
         // Add subfolder results to totals
@@ -1124,7 +1156,11 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
         result.processed += subfolderResult.processed;
         result.success += subfolderResult.success;
         result.failed += subfolderResult.failed;
+        
+        mainWindow.webContents.send('log', `--- Completed subfolder: ${path.basename(subfolder)}, Found: ${subfolderResult.total}, Processed: ${subfolderResult.processed} ---`);
       }
+      
+      mainWindow.webContents.send('log', `Completed all ${subfolders.length} subfolders in ${path.basename(folderPath)}`);
     }
     
     return result;
@@ -1238,3 +1274,4 @@ ipcMain.handle('process-images', async (event, data) => {
     }
   }
 });
+
