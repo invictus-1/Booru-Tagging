@@ -4,7 +4,8 @@ This project provides a complete package for automatically tagging images in [Ea
 
 1. **Booru Image Processor**: A standalone application that processes images through the Booru API and saves tag data as JSON files
 2. **Eagle Plugin**: A plugin for Eagle that reads these JSON files and applies the tags to your images. Keep in mind the Json files will be named after the image itself. So for example
-if the image is named earth.png the json is named earth.json. That way with the Eagle plugin it will just find the correct json for the correct image using the json file names.
+if the image is named earth.png the json is named earth.json. That way with the Eagle plugin it will just find the correct json for the correct image using the json file names. You can download the
+Eagle Plugin from the repo. It would be on Eagle's community plugins but they still haven't reviewed it.
 
 ## Requirements
 
