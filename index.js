@@ -89,24 +89,34 @@ async function isPortInUse(port) {
   });
 }
 
-// Check if the API is running on a specific port
+// Improved check if the API is running on a specific port
 async function checkApiRunning(port = PERMANENT_INSTANCE_PORT) {
   try {
-    // First try DNS resolution to ensure network is working
-    await dns.lookup('localhost');
+    console.log(`Checking if API is running on port ${port}...`);
     
-    // Use a fresh axios instance with short timeout for checks
+    // Use a fresh axios instance with longer timeout for checks
     const axiosInstance = axios.create({
-      timeout: 3000,
+      timeout: 10000, // 10 second timeout
       validateStatus: () => true
     });
     
-    const response = await axiosInstance.get(`http://localhost:${port}`);
-    return response.status < 500;
-  } catch (error) {
-    if (error.code === 'ECONNREFUSED') {
-      return false;
+    // Try multiple times with increasing delays
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = await axiosInstance.get(`http://localhost:${port}`);
+        if (response.status < 500) {
+          console.log(`API check response status: ${response.status}`);
+          return true;
+        }
+      } catch (attemptError) {
+        console.log(`Attempt ${attempt+1} failed, retrying...`);
+        // Wait a bit more before next attempt
+        await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
+      }
     }
+    
+    return false;
+  } catch (error) {
     console.error(`Error checking API on port ${port}:`, error.message);
     return false;
   }
@@ -207,9 +217,14 @@ function createWindow() {
   mainWindow.loadFile('index.html');
 }
 
-// Start permanent instance if needed
+// REMOVED: No longer trying to start Docker at app launch
+app.whenReady().then(() => {
+  createWindow();
+});
+
+// Start permanent instance if needed - simplified to just check
 async function ensurePermanentInstanceRunning() {
-  // Check if permanent instance is already running
+  // Just check if it's running - don't try to start it here
   const isPermanentRunning = await checkApiRunning(PERMANENT_INSTANCE_PORT);
   
   if (isPermanentRunning) {
@@ -218,122 +233,7 @@ async function ensurePermanentInstanceRunning() {
     return true;
   }
   
-  // Start the permanent instance
-  try {
-    mainWindow.webContents.send('log', 'Starting permanent API instance...');
-    
-    const containerId = await new Promise((resolve, reject) => {
-      exec(`docker run -d --rm -p ${PERMANENT_INSTANCE_PORT}:5000 ghcr.io/danbooru/autotagger`, (error, stdout, stderr) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve(stdout.trim());
-      });
-    });
-    
-    instanceRegistry.permanentInstanceId = containerId;
-    instanceRegistry.isPermanentInstanceRunning = true;
-    
-    // Allow time for container to fully initialize
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    // Verify it's actually running
-    const isRunning = await checkApiRunning(PERMANENT_INSTANCE_PORT);
-    if (!isRunning) {
-      throw new Error("Container started but API didn't initialize properly");
-    }
-    
-    mainWindow.webContents.send('log', 'Permanent API instance started successfully ✓', 'success');
-    return true;
-  } catch (error) {
-    mainWindow.webContents.send('log', `Failed to start permanent API instance: ${error.message}`, 'error');
-    instanceRegistry.isPermanentInstanceRunning = false;
-    return false;
-  }
-}
-
-// Start additional Docker containers
-async function startAdditionalContainers(count) {
-  const containers = [];
-  const endpoints = [];
-  
-  // Add the permanent instance first
-  await ensurePermanentInstanceRunning();
-  endpoints.push(`http://localhost:${PERMANENT_INSTANCE_PORT}/evaluate`);
-  
-  if (count <= 1) {
-    return { containers, endpoints };
-  }
-  
-  // First stop any previous additional containers
-  await stopAdditionalContainers();
-  
-  mainWindow.webContents.send('log', `Starting ${count-1} additional API instances...`);
-  
-  // Calculate system resources
-  const totalMemoryGB = Math.round(os.totalmem() / (1024 * 1024 * 1024));
-  const maxRecommendedInstances = Math.max(1, Math.floor(totalMemoryGB / 4));
-  
-  if (count > maxRecommendedInstances) {
-    mainWindow.webContents.send('log', `Warning: Starting ${count} instances may exceed system resources (${totalMemoryGB}GB RAM detected)`, 'warning');
-  }
-  
-  // Start additional Docker containers
-  for (let i = 0; i < count - 1; i++) {
-    const port = ADDITIONAL_INSTANCE_START_PORT + i;
-    
-    // Check if port is already in use
-    const portInUse = await isPortInUse(port);
-    if (portInUse) {
-      try {
-        const apiRunning = await checkApiRunning(port);
-        if (apiRunning) {
-          mainWindow.webContents.send('log', `API already running on port ${port}, using existing instance`);
-          endpoints.push(`http://localhost:${port}/evaluate`);
-          continue;
-        } else {
-          mainWindow.webContents.send('log', `Port ${port} is in use but not by the API, skipping`, 'error');
-          continue;
-        }
-      } catch (error) {
-        mainWindow.webContents.send('log', `Error checking port ${port}: ${error.message}`, 'error');
-        continue;
-      }
-    }
-    
-    try {
-      // Run Docker container in detached mode
-      const containerId = await new Promise((resolve, reject) => {
-        exec(`docker run -d --rm -p ${port}:5000 ghcr.io/danbooru/autotagger`, (error, stdout, stderr) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve(stdout.trim());
-        });
-      });
-      
-      containers.push(containerId);
-      instanceRegistry.additionalInstances.push({ containerId, port });
-      endpoints.push(`http://localhost:${port}/evaluate`);
-      mainWindow.webContents.send('log', `Started additional API instance #${i+2} on port ${port}`);
-      
-      // Wait a bit between starts to avoid Docker issues
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    } catch (error) {
-      mainWindow.webContents.send('log', `Failed to start API instance on port ${port}: ${error.message}`, 'error');
-    }
-  }
-  
-  if (endpoints.length <= 1) {
-    mainWindow.webContents.send('log', `Warning: Failed to start any additional API instances`, 'warning');
-  }
-  
-  return {
-    containers,
-    endpoints
-  };
+  return false;
 }
 
 // Stop only additional containers, leave permanent one running
@@ -390,17 +290,6 @@ async function shutdownAllContainers() {
     }
   }
 }
-
-app.whenReady().then(async () => {
-  createWindow();
-  
-  // Start permanent API instance
-  try {
-    await ensurePermanentInstanceRunning();
-  } catch (error) {
-    console.error('Error starting permanent API instance:', error);
-  }
-});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -1170,7 +1059,7 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
   }
 }
 
-// Process multiple folders
+// COMPLETELY REWRITTEN: Process multiple folders with Docker startup on button click
 ipcMain.handle('process-images', async (event, data) => {
   const { 
     folders, 
@@ -1190,21 +1079,123 @@ ipcMain.handle('process-images', async (event, data) => {
   let apiEndpoints = [];
   
   try {
-    // Ensure permanent instance is running
-    const permanentInstanceOk = await ensurePermanentInstanceRunning();
-    if (!permanentInstanceOk) {
-      throw new Error("Failed to start or connect to permanent API instance");
+    // Always start Docker containers when "Process Images" is clicked
+    mainWindow.webContents.send('log', 'Starting Docker containers...');
+    
+    // First, check if primary instance is already running
+    const isPrimaryRunning = await checkApiRunning(PERMANENT_INSTANCE_PORT);
+    
+    if (!isPrimaryRunning) {
+      // Start primary Docker instance
+      mainWindow.webContents.send('log', 'Starting primary Docker instance...');
+      let primaryStarted = false;
+      let primaryRetries = 0;
+      
+      while (!primaryStarted && primaryRetries < 3) {
+        try {
+          const containerId = await new Promise((resolve, reject) => {
+            const cmd = `docker run -d --rm -p ${PERMANENT_INSTANCE_PORT}:5000 ghcr.io/danbooru/autotagger`;
+            mainWindow.webContents.send('log', `Running command: ${cmd}`);
+            
+            exec(cmd, (error, stdout, stderr) => {
+              if (error) {
+                mainWindow.webContents.send('log', `Docker error: ${error.message}`, 'error');
+                reject(error);
+                return;
+              }
+              resolve(stdout.trim());
+            });
+          });
+          
+          instanceRegistry.permanentInstanceId = containerId;
+          instanceRegistry.isPermanentInstanceRunning = true;
+          
+          // Give Docker time to fully initialize (increased wait time)
+          mainWindow.webContents.send('log', 'Waiting for Docker container to initialize (this may take a moment)...');
+          await new Promise(resolve => setTimeout(resolve, 10000));
+          
+          // Verify it's actually running
+          const isRunning = await checkApiRunning(PERMANENT_INSTANCE_PORT);
+          if (isRunning) {
+            mainWindow.webContents.send('log', 'Primary Docker instance is running and responding ✓', 'success');
+            primaryStarted = true;
+          } else {
+            throw new Error("Container started but API is not responding");
+          }
+        } catch (error) {
+          mainWindow.webContents.send('log', `Attempt ${primaryRetries+1}/3 failed: ${error.message}`, 'error');
+          primaryRetries++;
+          
+          if (primaryRetries < 3) {
+            mainWindow.webContents.send('log', 'Retrying Docker startup...');
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+        }
+      }
+      
+      if (!primaryStarted) {
+        throw new Error("Failed to start primary Docker instance after multiple attempts");
+      }
+    } else {
+      mainWindow.webContents.send('log', 'Primary Docker instance is already running ✓', 'success');
+      instanceRegistry.isPermanentInstanceRunning = true;
     }
     
-    // Start all API instances
-    const result = await startAdditionalContainers(apiInstances);
-    apiEndpoints = result.endpoints;
+    // Add primary instance to endpoints
+    apiEndpoints.push(`http://localhost:${PERMANENT_INSTANCE_PORT}/evaluate`);
+    
+    // Only start additional instances if requested
+    if (apiInstances > 1) {
+      mainWindow.webContents.send('log', `Starting ${apiInstances-1} additional Docker instances...`);
+      
+      // Stop any existing additional instances first
+      await stopAdditionalContainers();
+      
+      for (let i = 0; i < apiInstances - 1; i++) {
+        const port = ADDITIONAL_INSTANCE_START_PORT + i;
+        
+        try {
+          // Run Docker container
+          const containerId = await new Promise((resolve, reject) => {
+            exec(`docker run -d --rm -p ${port}:5000 ghcr.io/danbooru/autotagger`, (error, stdout, stderr) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              resolve(stdout.trim());
+            });
+          });
+          
+          instanceRegistry.additionalInstances.push({ containerId, port });
+          mainWindow.webContents.send('log', `Started additional Docker instance #${i+2} on port ${port}`);
+          
+          // Wait between starts
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // Check if it's running
+          const isRunning = await checkApiRunning(port);
+          if (isRunning) {
+            apiEndpoints.push(`http://localhost:${port}/evaluate`);
+            mainWindow.webContents.send('log', `Instance #${i+2} is responding ✓`);
+          } else {
+            mainWindow.webContents.send('log', `Warning: Instance #${i+2} started but isn't responding yet`, 'warning');
+          }
+        } catch (error) {
+          mainWindow.webContents.send('log', `Failed to start instance #${i+2}: ${error.message}`, 'error');
+        }
+      }
+    }
+    
+    if (apiEndpoints.length === 0) {
+      throw new Error("No Docker instances are running. Please make sure Docker is installed and running.");
+    }
     
     // Initialize health tracking
     initializeInstanceHealth(apiEndpoints.length);
     
-    mainWindow.webContents.send('log', `Starting to process ${folders.length} folders with ${apiEndpoints.length} API instance(s)...`);
+    mainWindow.webContents.send('log', `All Docker instances ready. Processing ${folders.length} folders with ${apiEndpoints.length} instance(s)...`);
     
+    // Process images with the running Docker instances
     let totalImages = 0;
     let totalProcessed = 0;
     let totalSuccess = 0;
@@ -1254,24 +1245,18 @@ ipcMain.handle('process-images', async (event, data) => {
       instancesUsed: apiEndpoints.length
     };
   } catch (error) {
-    mainWindow.webContents.send('log', `Error: ${error.message}`);
+    mainWindow.webContents.send('log', `Error: ${error.message}`, 'error');
     throw error;
   } finally {
     // Wait for connections to cool down
     await waitForSocketsCooldown(CONNECTION_COOLDOWN_MS);
     
-    // Stop additional containers, keep permanent one running
+    // Stop additional containers, but keep permanent one running
     await stopAdditionalContainers();
     
     // Reset connection pools
-    for (let i = 0; i < connectionPools.length; i++) {
-      resetConnectionPool(i);
-    }
-    
-    // Force Node.js to clean up sockets
-    if (global.gc) {
-      global.gc();
+    for (const key in connectionPools) {
+      resetConnectionPool(parseInt(key));
     }
   }
 });
-
