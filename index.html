@@ -115,6 +115,10 @@
       color: #4CAF50;
       font-weight: bold;
     }
+    .warning {
+      color: #f57c00;
+      font-weight: bold;
+    }
     .mode-options {
       margin-top: 5px;
     }
@@ -183,10 +187,6 @@
       font-size: 12px;
       color: #666;
       margin-top: 5px;
-    }
-    .warning {
-      color: #f57c00;
-      font-weight: bold;
     }
     .concurrency-setting {
       display: flex;
@@ -482,7 +482,7 @@
       }
     }
     
-    // Process button handler
+    // Process button handler - UPDATED FOR DOCKER STARTUP FEEDBACK
     processBtn.addEventListener('click', async () => {
       if (selectedFolders.length === 0) {
         alert('Please select at least one folder');
@@ -496,11 +496,6 @@
         if (!confirmed) return;
       }
       
-      // Check API connection first
-      if (!await checkApiConnection()) {
-        return;
-      }
-      
       // Set processing state
       isProcessing = true;
       isPaused = false;
@@ -509,18 +504,18 @@
       processBtn.disabled = true;
       selectFolderBtn.disabled = true;
       
-      // Show progress and controls
+      // Show progress and controls with Docker startup status
       progressContainer.style.display = 'block';
       progressBar.style.width = '0%';
-      progressText.textContent = 'Preparing...';
-      document.querySelector('.overall-progress').textContent = `Preparing to process ${selectedFolders.length} folders with ${apiInstances} API instance(s)...`;
+      progressText.textContent = 'Starting Docker...';
+      document.querySelector('.overall-progress').textContent = `Starting Docker container(s)...`;
       pauseResumeBtn.textContent = 'Pause';
       
       // Clear previous instances progress
       document.querySelector('.instances-progress').innerHTML = '';
       
-      // Clear log
-      logElement.innerHTML = 'Starting processing...<br>';
+      // Clear log and show Docker startup message
+      logElement.innerHTML = 'Starting Docker container(s)...<br>';
       
       try {
         const result = await ipcRenderer.invoke('process-images', {
@@ -640,3 +635,4 @@
   </script>
 </body>
 </html>
+
