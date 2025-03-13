@@ -15,6 +15,11 @@ let processingState = {
   isCanceled: false
 };
 
+// Add global processing state
+let isProcessing = false;
+// Add health check interval
+let healthCheckInterval = null;
+
 // Configuration constants
 const PERMANENT_INSTANCE_PORT = 5000;
 const ADDITIONAL_INSTANCE_START_PORT = 5001;
@@ -120,6 +125,126 @@ async function checkApiRunning(port = PERMANENT_INSTANCE_PORT) {
     console.error(`Error checking API on port ${port}:`, error.message);
     return false;
   }
+}
+
+// Periodically check and recover unhealthy instances - NEW FUNCTION
+async function checkAndRecoverInstances() {
+  mainWindow.webContents.send('log', 'Performing health check on all Docker instances...');
+  
+  // Check the permanent instance first
+  const permanentRunning = await checkApiRunning(PERMANENT_INSTANCE_PORT);
+  if (!permanentRunning && instanceRegistry.isPermanentInstanceRunning) {
+    mainWindow.webContents.send('log', 'Primary Docker instance appears to be down. Attempting to restart...', 'error');
+    
+    // Try to restart the permanent instance
+    try {
+      // Stop the existing container if it's registered
+      if (instanceRegistry.permanentInstanceId) {
+        try {
+          await new Promise(resolve => {
+            exec(`docker stop ${instanceRegistry.permanentInstanceId}`, () => resolve());
+          });
+        } catch (e) {
+          // Ignore errors when stopping, container might already be gone
+        }
+      }
+      
+      // Start a new container
+      const containerId = await new Promise((resolve, reject) => {
+        exec(`docker run -d --rm -p ${PERMANENT_INSTANCE_PORT}:5000 ghcr.io/danbooru/autotagger`, (error, stdout) => {
+          if (error) reject(error);
+          else resolve(stdout.trim());
+        });
+      });
+      
+      instanceRegistry.permanentInstanceId = containerId;
+      instanceRegistry.isPermanentInstanceRunning = true;
+      
+      // Give it time to start
+      await new Promise(resolve => setTimeout(resolve, 8000));
+      
+      // Check if it's up
+      const isRunning = await checkApiRunning(PERMANENT_INSTANCE_PORT);
+      if (isRunning) {
+        mainWindow.webContents.send('log', 'Primary Docker instance restarted successfully ✓', 'success');
+        
+        // Update health status
+        if (instanceHealthStatus[0]) {
+          instanceHealthStatus[0].isHealthy = true;
+          instanceHealthStatus[0].consecutiveFailures = 0;
+        }
+      } else {
+        mainWindow.webContents.send('log', 'Failed to restart primary Docker instance', 'error');
+      }
+    } catch (error) {
+      mainWindow.webContents.send('log', `Error restarting primary Docker instance: ${error.message}`, 'error');
+    }
+  } else if (permanentRunning && instanceHealthStatus[0] && !instanceHealthStatus[0].isHealthy) {
+    // Primary instance is running but marked as unhealthy - restore it
+    mainWindow.webContents.send('log', 'Primary Docker instance is running but marked unhealthy. Restoring...', 'success');
+    instanceHealthStatus[0].isHealthy = true;
+    instanceHealthStatus[0].consecutiveFailures = 0;
+  }
+  
+  // Now check additional instances
+  for (let i = 0; i < instanceRegistry.additionalInstances.length; i++) {
+    const instance = instanceRegistry.additionalInstances[i];
+    const instanceIndex = i + 1; // Permanent is 0, additional start at 1
+    
+    const isRunning = await checkApiRunning(instance.port);
+    
+    if (!isRunning) {
+      mainWindow.webContents.send('log', `Additional instance #${instanceIndex+1} on port ${instance.port} appears to be down. Restarting...`, 'warning');
+      
+      try {
+        // Try to stop it first
+        try {
+          await new Promise(resolve => {
+            exec(`docker stop ${instance.containerId}`, () => resolve());
+          });
+        } catch (e) {
+          // Ignore errors when stopping
+        }
+        
+        // Start a new one
+        const containerId = await new Promise((resolve, reject) => {
+          exec(`docker run -d --rm -p ${instance.port}:5000 ghcr.io/danbooru/autotagger`, (error, stdout) => {
+            if (error) reject(error);
+            else resolve(stdout.trim());
+          });
+        });
+        
+        // Update registry with new container ID
+        instanceRegistry.additionalInstances[i].containerId = containerId;
+        
+        // Give it time to start
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        // Check if it's up
+        const newIsRunning = await checkApiRunning(instance.port);
+        if (newIsRunning) {
+          mainWindow.webContents.send('log', `Additional instance #${instanceIndex+1} restarted successfully ✓`, 'success');
+          
+          // Update health status
+          if (instanceHealthStatus[instanceIndex]) {
+            instanceHealthStatus[instanceIndex].isHealthy = true;
+            instanceHealthStatus[instanceIndex].consecutiveFailures = 0;
+          }
+        } else {
+          mainWindow.webContents.send('log', `Failed to restart additional instance #${instanceIndex+1}`, 'error');
+        }
+      } catch (error) {
+        mainWindow.webContents.send('log', `Error restarting additional instance #${instanceIndex+1}: ${error.message}`, 'error');
+      }
+    } else if (instanceHealthStatus[instanceIndex] && !instanceHealthStatus[instanceIndex].isHealthy) {
+      // Instance is running but marked as unhealthy - restore it
+      mainWindow.webContents.send('log', `Additional instance #${instanceIndex+1} is running but marked unhealthy. Restoring...`, 'success');
+      instanceHealthStatus[instanceIndex].isHealthy = true;
+      instanceHealthStatus[instanceIndex].consecutiveFailures = 0;
+    }
+  }
+  
+  mainWindow.webContents.send('log', 'Health check and recovery completed');
 }
 
 // Enhanced retry with circuit breaker
@@ -1060,6 +1185,7 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
 }
 
 // COMPLETELY REWRITTEN: Process multiple folders with Docker startup on button click
+// Now with health checks for long-running processes
 ipcMain.handle('process-images', async (event, data) => {
   const { 
     folders, 
@@ -1075,6 +1201,9 @@ ipcMain.handle('process-images', async (event, data) => {
     isPaused: false,
     isCanceled: false
   };
+  
+  // Set global processing flag
+  isProcessing = true;
   
   let apiEndpoints = [];
   
@@ -1193,6 +1322,28 @@ ipcMain.handle('process-images', async (event, data) => {
     // Initialize health tracking
     initializeInstanceHealth(apiEndpoints.length);
     
+    // Setup periodic health check for long-running processes - NEW CODE
+    if (healthCheckInterval) {
+      clearInterval(healthCheckInterval);
+    }
+
+    // Set up health check every 5 minutes
+    healthCheckInterval = setInterval(async () => {
+      if (isProcessing) {  // Only check while actively processing
+        try {
+          mainWindow.webContents.send('log', '--- Starting periodic health check of Docker instances ---');
+          await checkAndRecoverInstances();
+          mainWindow.webContents.send('log', '--- Health check completed ---');
+        } catch (error) {
+          mainWindow.webContents.send('log', `Error during health check: ${error.message}`, 'error');
+        }
+      } else {
+        // If not processing, clear the interval
+        clearInterval(healthCheckInterval);
+        healthCheckInterval = null;
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+    
     mainWindow.webContents.send('log', `All Docker instances ready. Processing ${folders.length} folders with ${apiEndpoints.length} instance(s)...`);
     
     // Process images with the running Docker instances
@@ -1248,6 +1399,15 @@ ipcMain.handle('process-images', async (event, data) => {
     mainWindow.webContents.send('log', `Error: ${error.message}`, 'error');
     throw error;
   } finally {
+    // Reset global processing flag
+    isProcessing = false;
+    
+    // Clear health check interval
+    if (healthCheckInterval) {
+      clearInterval(healthCheckInterval);
+      healthCheckInterval = null;
+    }
+    
     // Wait for connections to cool down
     await waitForSocketsCooldown(CONNECTION_COOLDOWN_MS);
     
@@ -1260,3 +1420,4 @@ ipcMain.handle('process-images', async (event, data) => {
     }
   }
 });
+
