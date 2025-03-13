@@ -9,6 +9,7 @@
       margin: 0;
       padding: 20px;
       background-color: #f5f5f5;
+      transition: background-color 0.3s ease;
     }
     .container {
       max-width: 800px;
@@ -17,6 +18,7 @@
       padding: 20px;
       border-radius: 8px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      transition: background-color 0.3s ease, box-shadow 0.3s ease;
     }
     h1 {
       text-align: center;
@@ -36,6 +38,7 @@
       box-sizing: border-box;
       border: 1px solid #ddd;
       border-radius: 4px;
+      transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
     }
     .folder-select {
       display: flex;
@@ -51,6 +54,7 @@
       padding: 10px 15px;
       border-radius: 4px;
       cursor: pointer;
+      transition: background-color 0.3s ease;
     }
     button:hover {
       background-color: #45a049;
@@ -74,6 +78,7 @@
       overflow-y: auto;
       font-family: monospace;
       background-color: #f9f9f9;
+      transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
     }
     .progress-container {
       margin-top: 20px;
@@ -144,6 +149,7 @@
       border-radius: 4px;
       display: flex;
       justify-content: space-between;
+      transition: background-color 0.3s ease;
     }
     .remove-folder {
       background: none;
@@ -178,6 +184,7 @@
       padding: 3px 5px;
       background-color: #f0f0f0;
       border-radius: 3px;
+      transition: background-color 0.3s ease;
     }
     .instance-progress.active {
       background-color: #e3f2fd;
@@ -187,6 +194,7 @@
       font-size: 12px;
       color: #666;
       margin-top: 5px;
+      transition: color 0.3s ease;
     }
     .concurrency-setting {
       display: flex;
@@ -194,9 +202,159 @@
       gap: 10px;
       margin-top: 10px;
     }
+    
+    /* Dark mode styles */
+    body.dark-mode {
+      background-color: #1e1e1e;
+      color: #e0e0e0;
+    }
+    
+    .dark-mode .container {
+      background-color: #2d2d2d;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    
+    .dark-mode input[type="text"], 
+    .dark-mode input[type="number"],
+    .dark-mode input[type="range"] {
+      background-color: #3d3d3d;
+      color: #e0e0e0;
+      border-color: #555;
+    }
+    
+    .dark-mode #log {
+      background-color: #3d3d3d;
+      color: #e0e0e0;
+      border-color: #555;
+    }
+    
+    .dark-mode button {
+      background-color: #4CAF50;
+    }
+    
+    .dark-mode button:hover {
+      background-color: #45a049;
+    }
+    
+    .dark-mode button:disabled {
+      background-color: #555555;
+    }
+    
+    .dark-mode .folder-item {
+      background-color: #3d3d3d;
+    }
+    
+    .dark-mode .instance-progress {
+      background-color: #333;
+    }
+    
+    .dark-mode .instance-progress.active {
+      background-color: #253544;
+      border-left: 3px solid #2196F3;
+    }
+    
+    .dark-mode .hint {
+      color: #bbb;
+    }
+    
+    .dark-mode .error {
+      color: #ff6b6b;
+    }
+    
+    .dark-mode .success {
+      color: #64dd17;
+    }
+    
+    .dark-mode .warning {
+      color: #ffa726;
+    }
+    
+    /* Theme toggle styling */
+    .theme-toggle {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+    }
+    
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 24px;
+      margin-left: 8px;
+    }
+    
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 24px;
+    }
+    
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    
+    input:checked + .toggle-slider {
+      background-color: #2196F3;
+    }
+    
+    input:focus + .toggle-slider {
+      box-shadow: 0 0 1px #2196F3;
+    }
+    
+    input:checked + .toggle-slider:before {
+      transform: translateX(26px);
+    }
+    
+    .toggle-slider:after {
+      content: "☀️";
+      display: block;
+      position: absolute;
+      right: 8px;
+      top: 2px;
+      font-size: 14px;
+    }
+    
+    input:checked + .toggle-slider:after {
+      content: "🌙";
+      right: auto;
+      left: 8px;
+    }
   </style>
 </head>
 <body>
+  <!-- Theme toggle switch -->
+  <div class="theme-toggle">
+    <span>Theme:</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="darkModeToggle">
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+
   <div class="container">
     <h1>Booru Image Processor</h1>
     
@@ -292,11 +450,36 @@
     const logElement = document.getElementById('log');
     const apiInstancesSlider = document.getElementById('apiInstances');
     const apiInstancesValue = document.getElementById('apiInstancesValue');
+    const darkModeToggle = document.getElementById('darkModeToggle');
     
     // State variables
     let isProcessing = false;
     let isPaused = false;
     let selectedFolders = [];
+    
+    // Dark mode handler
+    document.addEventListener('DOMContentLoaded', () => {
+      // Check for saved theme preference or prefer-color-scheme
+      const isDarkMode = localStorage.getItem('darkMode') === 'true' || 
+                     (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      
+      // Apply the initial theme
+      if (isDarkMode) {
+        document.body.classList.add('dark-mode');
+        darkModeToggle.checked = true;
+      }
+    });
+    
+    // Handle dark mode toggle
+    darkModeToggle.addEventListener('change', () => {
+      if (darkModeToggle.checked) {
+        document.body.classList.add('dark-mode');
+        localStorage.setItem('darkMode', 'true');
+      } else {
+        document.body.classList.remove('dark-mode');
+        localStorage.setItem('darkMode', 'false');
+      }
+    });
     
     // API instances slider listener
     apiInstancesSlider.addEventListener('input', function() {
@@ -538,6 +721,9 @@
         addLog(`Processed: ${result.processed}`);
         addLog(`Successfully processed: ${result.success}`);
         addLog(`Failed: ${result.failed}`);
+        if (result.skipped > 0) {
+          addLog(`Skipped corrupted files: ${result.skipped}`, 'warning');
+        }
         addLog(`API instances used: ${result.instancesUsed}`);
       } catch (error) {
         addLog(`Error: ${error.message}`, 'error');
@@ -577,8 +763,8 @@
     }
     
     // Handle log messages
-    ipcRenderer.on('log', (event, message) => {
-      addLog(message);
+    ipcRenderer.on('log', (event, message, type = '') => {
+      addLog(message, type);
     });
     
     // Handle progress updates
@@ -632,7 +818,11 @@
         overallEl.textContent = `Processing folder ${data.current} of ${data.total}: ${path.basename(data.folder)}`;
       }
     });
+    
+    // Force a UI update when requested
+    ipcRenderer.on('force-update', () => {
+      // This event just forces the renderer to process the event queue
+    });
   </script>
 </body>
 </html>
-
