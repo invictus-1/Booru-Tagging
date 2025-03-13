@@ -1,6 +1,6 @@
 {
   "name": "booru-processor",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Process images with Booru API and save tag data as JSON",
   "main": "index.js",
   "scripts": {
