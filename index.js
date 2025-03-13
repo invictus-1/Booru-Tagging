@@ -20,6 +20,8 @@ let processingState = {
 let isProcessing = false;
 // Add health check interval
 let healthCheckInterval = null;
+// Add log counter for UI updates
+let logCounter = 0;
 
 // Configuration constants
 const PERMANENT_INSTANCE_PORT = 5000;
@@ -56,9 +58,35 @@ let instanceHealthStatus = [];
 // Connection pools for each instance
 let connectionPools = {};
 
-// Helper function to yield to UI thread
+// Improved helper function to yield to UI thread
 function yieldToUI() {
-  return new Promise(resolve => setTimeout(resolve, 0));
+  return new Promise(resolve => {
+    // Force immediate UI update when window is out of focus
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (!mainWindow.isFocused()) {
+        mainWindow.webContents.send('force-update');
+      }
+      
+      // Use both setImmediate and setTimeout for more reliable yielding
+      setImmediate(() => {
+        setTimeout(resolve, 0);
+      });
+    } else {
+      setTimeout(resolve, 0); // Fallback if window not available
+    }
+  });
+}
+
+// Improved log sending function to ensure UI updates
+function sendLogToRenderer(message, type = '') {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  
+  mainWindow.webContents.send('log', message, type);
+  
+  // For important messages or every 10th message, ensure UI is updated
+  if (type === 'error' || type === 'warning' || logCounter++ % 10 === 0) {
+    mainWindow.webContents.send('force-update');
+  }
 }
 
 // Create a custom http agent with proper settings
@@ -93,7 +121,7 @@ function createAxiosInstance(instanceIndex) {
 // Reset connection pool for an instance
 function resetConnectionPool(instanceIndex) {
   if (connectionPools[instanceIndex]) {
-    mainWindow.webContents.send('log', `Resetting connection pool for instance #${instanceIndex+1}`);
+    sendLogToRenderer(`Resetting connection pool for instance #${instanceIndex+1}`);
     
     // Destroy the old agent and create a new one
     connectionPools[instanceIndex].destroy();
@@ -149,13 +177,13 @@ async function checkApiRunning(port = PERMANENT_INSTANCE_PORT) {
 
 // Periodically check and recover unhealthy instances - NEW FUNCTION
 async function checkAndRecoverInstances() {
-  mainWindow.webContents.send('log', 'Performing health check on all Docker instances...');
+  sendLogToRenderer('Performing health check on all Docker instances...');
   await yieldToUI(); // Allow UI update
   
   // Check the permanent instance first
   const permanentRunning = await checkApiRunning(PERMANENT_INSTANCE_PORT);
   if (!permanentRunning && instanceRegistry.isPermanentInstanceRunning) {
-    mainWindow.webContents.send('log', 'Primary Docker instance appears to be down. Attempting to restart...', 'error');
+    sendLogToRenderer('Primary Docker instance appears to be down. Attempting to restart...', 'error');
     await yieldToUI(); // Allow UI update
     
     // Try to restart the permanent instance
@@ -190,7 +218,7 @@ async function checkAndRecoverInstances() {
       // Check if it's up
       const isRunning = await checkApiRunning(PERMANENT_INSTANCE_PORT);
       if (isRunning) {
-        mainWindow.webContents.send('log', 'Primary Docker instance restarted successfully ✓', 'success');
+        sendLogToRenderer('Primary Docker instance restarted successfully ✓', 'success');
         await yieldToUI(); // Allow UI update
         
         // Update health status
@@ -199,16 +227,16 @@ async function checkAndRecoverInstances() {
           instanceHealthStatus[0].consecutiveFailures = 0;
         }
       } else {
-        mainWindow.webContents.send('log', 'Failed to restart primary Docker instance', 'error');
+        sendLogToRenderer('Failed to restart primary Docker instance', 'error');
         await yieldToUI(); // Allow UI update
       }
     } catch (error) {
-      mainWindow.webContents.send('log', `Error restarting primary Docker instance: ${error.message}`, 'error');
+      sendLogToRenderer(`Error restarting primary Docker instance: ${error.message}`, 'error');
       await yieldToUI(); // Allow UI update
     }
   } else if (permanentRunning && instanceHealthStatus[0] && !instanceHealthStatus[0].isHealthy) {
     // Primary instance is running but marked as unhealthy - restore it
-    mainWindow.webContents.send('log', 'Primary Docker instance is running but marked unhealthy. Restoring...', 'success');
+    sendLogToRenderer('Primary Docker instance is running but marked unhealthy. Restoring...', 'success');
     await yieldToUI(); // Allow UI update
     instanceHealthStatus[0].isHealthy = true;
     instanceHealthStatus[0].consecutiveFailures = 0;
@@ -225,7 +253,7 @@ async function checkAndRecoverInstances() {
     const isRunning = await checkApiRunning(instance.port);
     
     if (!isRunning) {
-      mainWindow.webContents.send('log', `Additional instance #${instanceIndex+1} on port ${instance.port} appears to be down. Restarting...`, 'warning');
+      sendLogToRenderer(`Additional instance #${instanceIndex+1} on port ${instance.port} appears to be down. Restarting...`, 'warning');
       await yieldToUI(); // Allow UI update
       
       try {
@@ -257,7 +285,7 @@ async function checkAndRecoverInstances() {
         // Check if it's up
         const newIsRunning = await checkApiRunning(instance.port);
         if (newIsRunning) {
-          mainWindow.webContents.send('log', `Additional instance #${instanceIndex+1} restarted successfully ✓`, 'success');
+          sendLogToRenderer(`Additional instance #${instanceIndex+1} restarted successfully ✓`, 'success');
           await yieldToUI(); // Allow UI update
           
           // Update health status
@@ -266,23 +294,23 @@ async function checkAndRecoverInstances() {
             instanceHealthStatus[instanceIndex].consecutiveFailures = 0;
           }
         } else {
-          mainWindow.webContents.send('log', `Failed to restart additional instance #${instanceIndex+1}`, 'error');
+          sendLogToRenderer(`Failed to restart additional instance #${instanceIndex+1}`, 'error');
           await yieldToUI(); // Allow UI update
         }
       } catch (error) {
-        mainWindow.webContents.send('log', `Error restarting additional instance #${instanceIndex+1}: ${error.message}`, 'error');
+        sendLogToRenderer(`Error restarting additional instance #${instanceIndex+1}: ${error.message}`, 'error');
         await yieldToUI(); // Allow UI update
       }
     } else if (instanceHealthStatus[instanceIndex] && !instanceHealthStatus[instanceIndex].isHealthy) {
       // Instance is running but marked as unhealthy - restore it
-      mainWindow.webContents.send('log', `Additional instance #${instanceIndex+1} is running but marked unhealthy. Restoring...`, 'success');
+      sendLogToRenderer(`Additional instance #${instanceIndex+1} is running but marked unhealthy. Restoring...`, 'success');
       await yieldToUI(); // Allow UI update
       instanceHealthStatus[instanceIndex].isHealthy = true;
       instanceHealthStatus[instanceIndex].consecutiveFailures = 0;
     }
   }
   
-  mainWindow.webContents.send('log', 'Health check and recovery completed');
+  sendLogToRenderer('Health check and recovery completed');
   await yieldToUI(); // Allow UI update
 }
 
@@ -326,7 +354,7 @@ async function enhancedRetryRequest(fn, instanceIndex, maxRetries = 3, initialDe
 
 // Wait for sockets to cool down before continuing
 async function waitForSocketsCooldown(ms = CONNECTION_COOLDOWN_MS) {
-  mainWindow.webContents.send('log', `Waiting ${ms/1000} seconds for connections to close...`);
+  sendLogToRenderer(`Waiting ${ms/1000} seconds for connections to close...`);
   await yieldToUI(); // Allow UI update
   await new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -360,7 +388,7 @@ function updateInstanceHealth(instanceIndex, success) {
     if (instanceHealthStatus[instanceIndex].consecutiveFailures >= 5) {
       if (instanceHealthStatus[instanceIndex].isHealthy) {
         instanceHealthStatus[instanceIndex].isHealthy = false;
-        mainWindow.webContents.send('log', `Instance #${instanceIndex+1} marked as unhealthy after 5 consecutive failures`, 'error');
+        sendLogToRenderer(`Instance #${instanceIndex+1} marked as unhealthy after 5 consecutive failures`, 'error');
       }
     }
   }
@@ -371,14 +399,15 @@ function isInstanceHealthy(instanceIndex) {
   return instanceHealthStatus[instanceIndex] && instanceHealthStatus[instanceIndex].isHealthy;
 }
 
-// Create the main application window
+// Create the main application window with background throttling disabled
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 800,
     height: 650,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      backgroundThrottling: false  // Prevent throttling when out of focus
     }
   });
 
@@ -396,7 +425,7 @@ async function ensurePermanentInstanceRunning() {
   const isPermanentRunning = await checkApiRunning(PERMANENT_INSTANCE_PORT);
   
   if (isPermanentRunning) {
-    mainWindow.webContents.send('log', 'Permanent API instance already running ✓', 'success');
+    sendLogToRenderer('Permanent API instance already running ✓', 'success');
     await yieldToUI(); // Allow UI update
     instanceRegistry.isPermanentInstanceRunning = true;
     return true;
@@ -411,16 +440,16 @@ async function stopAdditionalContainers() {
     return;
   }
   
-  mainWindow.webContents.send('log', `Stopping ${instanceRegistry.additionalInstances.length} additional API instances...`);
+  sendLogToRenderer(`Stopping ${instanceRegistry.additionalInstances.length} additional API instances...`);
   await yieldToUI(); // Allow UI update
   
   const promises = instanceRegistry.additionalInstances.map(instance => {
     return new Promise(resolve => {
       exec(`docker stop ${instance.containerId}`, (error) => {
         if (error) {
-          mainWindow.webContents.send('log', `Error stopping container on port ${instance.port}: ${error.message}`, 'error');
+          sendLogToRenderer(`Error stopping container on port ${instance.port}: ${error.message}`, 'error');
         } else {
-          mainWindow.webContents.send('log', `Stopped API instance on port ${instance.port}`);
+          sendLogToRenderer(`Stopped API instance on port ${instance.port}`);
         }
         resolve();
       });
@@ -446,9 +475,9 @@ async function shutdownAllContainers() {
       await new Promise((resolve, reject) => {
         exec(`docker stop ${instanceRegistry.permanentInstanceId}`, (error) => {
           if (error) {
-            mainWindow.webContents.send('log', `Error stopping permanent container: ${error.message}`, 'error');
+            sendLogToRenderer(`Error stopping permanent container: ${error.message}`, 'error');
           } else {
-            mainWindow.webContents.send('log', `Stopped permanent API instance`);
+            sendLogToRenderer(`Stopped permanent API instance`);
           }
           resolve();
         });
@@ -725,7 +754,7 @@ async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, 
   
   // Create a function for each instance to process images from the queue
   async function instanceWorker(endpoint, instanceIndex) {
-    mainWindow.webContents.send('log', `Instance #${instanceIndex+1} started on ${endpoint}`);
+    sendLogToRenderer(`Instance #${instanceIndex+1} started on ${endpoint}`);
     await yieldToUI(); // Allow UI update
     
     let instanceProcessed = 0;
@@ -742,7 +771,7 @@ async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, 
     while (imageQueue.length > 0 && !processingState.isCanceled) {
       // Check if instance is still healthy
       if (!isInstanceHealthy(instanceIndex)) {
-        mainWindow.webContents.send('log', `Instance #${instanceIndex+1} is no longer healthy. Stopping this worker.`, 'error');
+        sendLogToRenderer(`Instance #${instanceIndex+1} is no longer healthy. Stopping this worker.`, 'error');
         await yieldToUI(); // Allow UI update
         break;
       }
@@ -780,7 +809,7 @@ async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, 
 
         // Check if this file has been identified as corrupted
         if (isFileCorrupted(imagePath)) {
-          mainWindow.webContents.send('log', `Skipping potentially corrupted file: ${imageFile} (failed ${MAX_FILE_RETRIES} times) ✗`, 'error');
+          sendLogToRenderer(`Skipping potentially corrupted file: ${imageFile} (failed ${MAX_FILE_RETRIES} times) ✗`, 'error');
           instanceSkipped++;
           
           return {
@@ -822,7 +851,7 @@ async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, 
             // Save JSON
             await fs.writeFile(jsonFilePath, JSON.stringify(response.data, null, 2));
             
-            mainWindow.webContents.send('log', `Instance #${instanceIndex+1} processed ${imageFile} ✓`);
+            sendLogToRenderer(`Instance #${instanceIndex+1} processed ${imageFile} ✓`);
             instanceSuccess++;
             consecutiveErrors = 0; // Reset error counter on success
             updateInstanceHealth(instanceIndex, true);
@@ -842,17 +871,17 @@ async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, 
           const retryCount = trackFileRetry(imagePath);
           
           if (retryCount >= MAX_FILE_RETRIES) {
-            mainWindow.webContents.send('log', `Image ${imageFile} might be corrupted, skipping after ${retryCount} attempts ✗`, 'error');
+            sendLogToRenderer(`Image ${imageFile} might be corrupted, skipping after ${retryCount} attempts ✗`, 'error');
             instanceSkipped++;
           } else {
-            mainWindow.webContents.send('log', `Instance #${instanceIndex+1} error processing ${imageFile}: ${error.message} ✗ (attempt ${retryCount}/${MAX_FILE_RETRIES})`);
+            sendLogToRenderer(`Instance #${instanceIndex+1} error processing ${imageFile}: ${error.message} ✗ (attempt ${retryCount}/${MAX_FILE_RETRIES})`);
             instanceFailed++;
             consecutiveErrors++;
             updateInstanceHealth(instanceIndex, false);
             
             // If too many consecutive errors, reset connection
             if (consecutiveErrors >= CONNECTION_RESET_THRESHOLD) {
-              mainWindow.webContents.send('log', `Too many consecutive errors for Instance #${instanceIndex+1}. Resetting connection...`, 'warning');
+              sendLogToRenderer(`Too many consecutive errors for Instance #${instanceIndex+1}. Resetting connection...`, 'warning');
               resetConnectionPool(instanceIndex);
               consecutiveErrors = 0;
               
@@ -905,7 +934,7 @@ async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, 
       await new Promise(resolve => setTimeout(resolve, 300));
     }
     
-    mainWindow.webContents.send('log', `Instance #${instanceIndex+1} finished. Processed: ${instanceProcessed}, Success: ${instanceSuccess}, Failed: ${instanceFailed}, Skipped: ${instanceSkipped}`);
+    sendLogToRenderer(`Instance #${instanceIndex+1} finished. Processed: ${instanceProcessed}, Success: ${instanceSuccess}, Failed: ${instanceFailed}, Skipped: ${instanceSkipped}`);
     await yieldToUI(); // Allow UI update
     
     return {
@@ -924,7 +953,7 @@ async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, 
       return instanceWorker(endpoint, index);
     } else {
       // Skip unhealthy instances
-      mainWindow.webContents.send('log', `Skipping unhealthy instance #${index+1}`);
+      sendLogToRenderer(`Skipping unhealthy instance #${index+1}`);
       return Promise.resolve({
         instanceProcessed: 0,
         instanceSuccess: 0,
@@ -940,7 +969,7 @@ async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, 
   
   // Process any remaining failed images (that aren't marked as corrupted)
   if (failedImages.length > 0 && !processingState.isCanceled) {
-    mainWindow.webContents.send('log', `Retrying ${failedImages.length} failed images...`, 'warning');
+    sendLogToRenderer(`Retrying ${failedImages.length} failed images...`, 'warning');
     await yieldToUI(); // Allow UI update
     
     // Filter out any images that have become marked as corrupted
@@ -950,7 +979,7 @@ async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, 
     });
     
     if (nonCorruptedFailedImages.length < failedImages.length) {
-      mainWindow.webContents.send('log', `Skipping ${failedImages.length - nonCorruptedFailedImages.length} corrupted images from retry queue`, 'warning');
+      sendLogToRenderer(`Skipping ${failedImages.length - nonCorruptedFailedImages.length} corrupted images from retry queue`, 'warning');
       await yieldToUI();
     }
     
@@ -980,7 +1009,7 @@ async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, 
   // Log the number of potentially corrupted files skipped
   const corruptedCount = processedLog.filter(entry => entry.status === 'skipped').length;
   if (corruptedCount > 0) {
-    mainWindow.webContents.send('log', `Skipped ${corruptedCount} potentially corrupted files after multiple failed attempts`, 'warning');
+    sendLogToRenderer(`Skipped ${corruptedCount} potentially corrupted files after multiple failed attempts`, 'warning');
     await yieldToUI();
   }
   
@@ -1028,7 +1057,7 @@ async function processBatch(folderPath, imageFiles, jsonFolder, apiEndpoint, sta
       
       // Check if this file has been identified as corrupted
       if (isFileCorrupted(imagePath)) {
-        mainWindow.webContents.send('log', `Skipping potentially corrupted file: ${imageFile} (failed ${MAX_FILE_RETRIES} times) ✗`, 'error');
+        sendLogToRenderer(`Skipping potentially corrupted file: ${imageFile} (failed ${MAX_FILE_RETRIES} times) ✗`, 'error');
         batchResults.skipped++;
         
         return {
@@ -1070,7 +1099,7 @@ async function processBatch(folderPath, imageFiles, jsonFolder, apiEndpoint, sta
           // Save JSON
           await fs.writeFile(jsonFilePath, JSON.stringify(response.data, null, 2));
           
-          mainWindow.webContents.send('log', `Processed ${imageFile} in ${path.basename(folderPath)} ✓`);
+          sendLogToRenderer(`Processed ${imageFile} in ${path.basename(folderPath)} ✓`);
           batchResults.success++;
           
           return {
@@ -1088,7 +1117,7 @@ async function processBatch(folderPath, imageFiles, jsonFolder, apiEndpoint, sta
         const retryCount = trackFileRetry(imagePath);
         
         if (retryCount >= MAX_FILE_RETRIES) {
-          mainWindow.webContents.send('log', `Image ${imageFile} might be corrupted, skipping after ${retryCount} attempts ✗`, 'error');
+          sendLogToRenderer(`Image ${imageFile} might be corrupted, skipping after ${retryCount} attempts ✗`, 'error');
           batchResults.skipped++;
           
           return {
@@ -1099,7 +1128,7 @@ async function processBatch(folderPath, imageFiles, jsonFolder, apiEndpoint, sta
             error: `File potentially corrupted - failed ${retryCount} attempts`
           };
         } else {
-          mainWindow.webContents.send('log', `Error processing ${imageFile}: ${error.message} ✗ (attempt ${retryCount}/${MAX_FILE_RETRIES})`);
+          sendLogToRenderer(`Error processing ${imageFile}: ${error.message} ✗ (attempt ${retryCount}/${MAX_FILE_RETRIES})`);
           batchResults.failed++;
           
           return {
@@ -1158,13 +1187,13 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
     }
     
     // Add debug logging for subfolder detection
-    mainWindow.webContents.send('log', `Found ${subfolders.length} subfolders in ${path.basename(folderPath)}`);
+    sendLogToRenderer(`Found ${subfolders.length} subfolders in ${path.basename(folderPath)}`);
     await yieldToUI(); // Allow UI update
     
     if (subfolders.length > 0) {
       let subfoldersStr = subfolders.map(sf => path.basename(sf)).join(', ');
       if (subfoldersStr.length > 100) subfoldersStr = subfoldersStr.substring(0, 100) + '...';
-      mainWindow.webContents.send('log', `Subfolders: ${subfoldersStr}`);
+      sendLogToRenderer(`Subfolders: ${subfoldersStr}`);
       await yieldToUI(); // Allow UI update
     }
     
@@ -1179,7 +1208,7 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
     
     if (processMode === 'all') {
       filesToProcess = imageFiles;
-      mainWindow.webContents.send('log', `Processing all ${filesToProcess.length} images in ${path.basename(folderPath)}`);
+      sendLogToRenderer(`Processing all ${filesToProcess.length} images in ${path.basename(folderPath)}`);
       await yieldToUI(); // Allow UI update
       
     } else if (processMode === 'new') {
@@ -1202,7 +1231,7 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
       }
       
       filesToProcess = newFiles;
-      mainWindow.webContents.send('log', `Found ${existingJsonCount} existing JSON files. Processing ${filesToProcess.length} new images in ${path.basename(folderPath)}`);
+      sendLogToRenderer(`Found ${existingJsonCount} existing JSON files. Processing ${filesToProcess.length} new images in ${path.basename(folderPath)}`);
       await yieldToUI(); // Allow UI update
       
     } else if (processMode === 'missing') {
@@ -1225,7 +1254,7 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
       }
       
       filesToProcess = missingFiles;
-      mainWindow.webContents.send('log', `Found ${jsonCount} existing JSON files. Processing ${filesToProcess.length} missing JSON files in ${path.basename(folderPath)}`);
+      sendLogToRenderer(`Found ${jsonCount} existing JSON files. Processing ${filesToProcess.length} missing JSON files in ${path.basename(folderPath)}`);
       await yieldToUI(); // Allow UI update
     }
     
@@ -1241,7 +1270,7 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
 
     // Only process files if there are any to process
     if (filesToProcess.length > 0) {
-      mainWindow.webContents.send('log', `Processing ${filesToProcess.length} files in ${path.basename(folderPath)}`);
+      sendLogToRenderer(`Processing ${filesToProcess.length} files in ${path.basename(folderPath)}`);
       await yieldToUI(); // Allow UI update
       
       let processedCount = 0;
@@ -1253,7 +1282,7 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
       // Choose processing method based on number of API endpoints
       if (apiEndpoints.length > 1) {
         // Process with multiple instances using shared queue
-        mainWindow.webContents.send('log', `Using ${apiEndpoints.length} API instances with shared queue for ${path.basename(folderPath)}`);
+        sendLogToRenderer(`Using ${apiEndpoints.length} API instances with shared queue for ${path.basename(folderPath)}`);
         await yieldToUI(); // Allow UI update
         
         const multiResults = await processWithMultipleInstances(
@@ -1279,7 +1308,7 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
         await yieldToUI(); // Allow UI update
       } else {
         // Process with single instance in batches
-        mainWindow.webContents.send('log', `Using single API instance for ${path.basename(folderPath)}`);
+        sendLogToRenderer(`Using single API instance for ${path.basename(folderPath)}`);
         await yieldToUI(); // Allow UI update
         
         // Process in batches until all images are processed
@@ -1331,7 +1360,7 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
       // Save processing log
       if (processedLog.length > 0) {
         const totalLogged = await saveProcessingLog(folderPath, processedLog);
-        mainWindow.webContents.send('log', `Updated log for ${path.basename(folderPath)} with ${totalLogged} entries`);
+        sendLogToRenderer(`Updated log for ${path.basename(folderPath)} with ${totalLogged} entries`);
         await yieldToUI(); // Allow UI update
       }
       
@@ -1344,23 +1373,23 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
       
       // Log summary including skipped files
       if (skipped > 0) {
-        mainWindow.webContents.send('log', `Summary for ${path.basename(folderPath)}: Success: ${success}, Failed: ${failed}, Skipped as corrupted: ${skipped}`);
+        sendLogToRenderer(`Summary for ${path.basename(folderPath)}: Success: ${success}, Failed: ${failed}, Skipped as corrupted: ${skipped}`);
         await yieldToUI();
       }
     } else {
-      mainWindow.webContents.send('log', `No files to process in ${path.basename(folderPath)}`);
+      sendLogToRenderer(`No files to process in ${path.basename(folderPath)}`);
       await yieldToUI(); // Allow UI update
     }
     
     // Process subfolders if requested - IMPROVED SECTION
     if (includeSubfolders && subfolders.length > 0 && !processingState.isCanceled) {
-      mainWindow.webContents.send('log', `Processing ${subfolders.length} subfolders in ${path.basename(folderPath)} (includeSubfolders=${includeSubfolders})...`);
+      sendLogToRenderer(`Processing ${subfolders.length} subfolders in ${path.basename(folderPath)} (includeSubfolders=${includeSubfolders})...`);
       await yieldToUI(); // Allow UI update
       
       for (const subfolder of subfolders) {
         if (processingState.isCanceled) break;
         
-        mainWindow.webContents.send('log', `--- Starting subfolder: ${path.basename(subfolder)} ---`);
+        sendLogToRenderer(`--- Starting subfolder: ${path.basename(subfolder)} ---`);
         await yieldToUI(); // Allow UI update
         
         const subfolderResult = await processFolder(
@@ -1378,17 +1407,17 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
         result.failed += subfolderResult.failed;
         result.skipped += subfolderResult.skipped || 0;
         
-        mainWindow.webContents.send('log', `--- Completed subfolder: ${path.basename(subfolder)}, Found: ${subfolderResult.total}, Processed: ${subfolderResult.processed}, Skipped: ${subfolderResult.skipped || 0} ---`);
+        sendLogToRenderer(`--- Completed subfolder: ${path.basename(subfolder)}, Found: ${subfolderResult.total}, Processed: ${subfolderResult.processed}, Skipped: ${subfolderResult.skipped || 0} ---`);
         await yieldToUI(); // Allow UI update
       }
       
-      mainWindow.webContents.send('log', `Completed all ${subfolders.length} subfolders in ${path.basename(folderPath)}`);
+      sendLogToRenderer(`Completed all ${subfolders.length} subfolders in ${path.basename(folderPath)}`);
       await yieldToUI(); // Allow UI update
     }
     
     return result;
   } catch (error) {
-    mainWindow.webContents.send('log', `Error processing folder ${folderPath}: ${error.message}`);
+    sendLogToRenderer(`Error processing folder ${folderPath}: ${error.message}`);
     await yieldToUI(); // Allow UI update
     return { folder: folderPath, total: 0, processed: 0, success: 0, failed: 0, skipped: 0 };
   }
@@ -1422,7 +1451,7 @@ ipcMain.handle('process-images', async (event, data) => {
   
   try {
     // Always start Docker containers when "Process Images" is clicked
-    mainWindow.webContents.send('log', 'Starting Docker containers...');
+    sendLogToRenderer('Starting Docker containers...');
     await yieldToUI(); // Allow UI update
     
     // First, check if primary instance is already running
@@ -1430,7 +1459,7 @@ ipcMain.handle('process-images', async (event, data) => {
     
     if (!isPrimaryRunning) {
       // Start primary Docker instance
-      mainWindow.webContents.send('log', 'Starting primary Docker instance...');
+      sendLogToRenderer('Starting primary Docker instance...');
       await yieldToUI(); // Allow UI update
       
       let primaryStarted = false;
@@ -1440,12 +1469,12 @@ ipcMain.handle('process-images', async (event, data) => {
         try {
           const containerId = await new Promise((resolve, reject) => {
             const cmd = `docker run -d --rm -p ${PERMANENT_INSTANCE_PORT}:5000 ghcr.io/danbooru/autotagger`;
-            mainWindow.webContents.send('log', `Running command: ${cmd}`);
+            sendLogToRenderer(`Running command: ${cmd}`);
             
             // Use proper promise with yieldToUI inside callback
             exec(cmd, (error, stdout, stderr) => {
               if (error) {
-                mainWindow.webContents.send('log', `Docker error: ${error.message}`, 'error');
+                sendLogToRenderer(`Docker error: ${error.message}`, 'error');
                 // Use promise chain for yielding in non-async context
                 yieldToUI().then(() => reject(error));
                 return;
@@ -1458,7 +1487,7 @@ ipcMain.handle('process-images', async (event, data) => {
           instanceRegistry.isPermanentInstanceRunning = true;
           
           // Give Docker time to fully initialize (increased wait time)
-          mainWindow.webContents.send('log', 'Waiting for Docker container to initialize (this may take a moment)...');
+          sendLogToRenderer('Waiting for Docker container to initialize (this may take a moment)...');
           await yieldToUI(); // Allow UI update
           
           // Break up the waiting period to allow UI updates
@@ -1470,19 +1499,19 @@ ipcMain.handle('process-images', async (event, data) => {
           // Verify it's actually running
           const isRunning = await checkApiRunning(PERMANENT_INSTANCE_PORT);
           if (isRunning) {
-            mainWindow.webContents.send('log', 'Primary Docker instance is running and responding ✓', 'success');
+            sendLogToRenderer('Primary Docker instance is running and responding ✓', 'success');
             await yieldToUI(); // Allow UI update
             primaryStarted = true;
           } else {
             throw new Error("Container started but API is not responding");
           }
         } catch (error) {
-          mainWindow.webContents.send('log', `Attempt ${primaryRetries+1}/3 failed: ${error.message}`, 'error');
+          sendLogToRenderer(`Attempt ${primaryRetries+1}/3 failed: ${error.message}`, 'error');
           await yieldToUI(); // Allow UI update
           primaryRetries++;
           
           if (primaryRetries < 3) {
-            mainWindow.webContents.send('log', 'Retrying Docker startup...');
+            sendLogToRenderer('Retrying Docker startup...');
             await yieldToUI(); // Allow UI update
             await new Promise(resolve => setTimeout(resolve, 3000));
           }
@@ -1493,7 +1522,7 @@ ipcMain.handle('process-images', async (event, data) => {
         throw new Error("Failed to start primary Docker instance after multiple attempts");
       }
     } else {
-      mainWindow.webContents.send('log', 'Primary Docker instance is already running ✓', 'success');
+      sendLogToRenderer('Primary Docker instance is already running ✓', 'success');
       await yieldToUI(); // Allow UI update
       instanceRegistry.isPermanentInstanceRunning = true;
     }
@@ -1503,7 +1532,7 @@ ipcMain.handle('process-images', async (event, data) => {
     
     // Only start additional instances if requested
     if (apiInstances > 1) {
-      mainWindow.webContents.send('log', `Starting ${apiInstances-1} additional Docker instances...`);
+      sendLogToRenderer(`Starting ${apiInstances-1} additional Docker instances...`);
       await yieldToUI(); // Allow UI update
       
       // Stop any existing additional instances first
@@ -1525,7 +1554,7 @@ ipcMain.handle('process-images', async (event, data) => {
           });
           
           instanceRegistry.additionalInstances.push({ containerId, port });
-          mainWindow.webContents.send('log', `Started additional Docker instance #${i+2} on port ${port}`);
+          sendLogToRenderer(`Started additional Docker instance #${i+2} on port ${port}`);
           await yieldToUI(); // Allow UI update
           
           // Wait between starts
@@ -1536,14 +1565,14 @@ ipcMain.handle('process-images', async (event, data) => {
           const isRunning = await checkApiRunning(port);
           if (isRunning) {
             apiEndpoints.push(`http://localhost:${port}/evaluate`);
-            mainWindow.webContents.send('log', `Instance #${i+2} is responding ✓`);
+            sendLogToRenderer(`Instance #${i+2} is responding ✓`);
             await yieldToUI(); // Allow UI update
           } else {
-            mainWindow.webContents.send('log', `Warning: Instance #${i+2} started but isn't responding yet`, 'warning');
+            sendLogToRenderer(`Warning: Instance #${i+2} started but isn't responding yet`, 'warning');
             await yieldToUI(); // Allow UI update
           }
         } catch (error) {
-          mainWindow.webContents.send('log', `Failed to start instance #${i+2}: ${error.message}`, 'error');
+          sendLogToRenderer(`Failed to start instance #${i+2}: ${error.message}`, 'error');
           await yieldToUI(); // Allow UI update
         }
       }
@@ -1566,11 +1595,11 @@ ipcMain.handle('process-images', async (event, data) => {
       if (isProcessing) {  // Only check while actively processing
         (async () => {
           try {
-            mainWindow.webContents.send('log', '--- Starting periodic health check of Docker instances ---');
+            sendLogToRenderer('--- Starting periodic health check of Docker instances ---');
             await checkAndRecoverInstances();
-            mainWindow.webContents.send('log', '--- Health check completed ---');
+            sendLogToRenderer('--- Health check completed ---');
           } catch (error) {
-            mainWindow.webContents.send('log', `Error during health check: ${error.message}`, 'error');
+            sendLogToRenderer(`Error during health check: ${error.message}`, 'error');
           }
         })().catch(err => console.error('Health check error:', err));
       } else {
@@ -1580,7 +1609,7 @@ ipcMain.handle('process-images', async (event, data) => {
       }
     }, 5 * 60 * 1000); // 5 minutes
     
-    mainWindow.webContents.send('log', `All Docker instances ready. Processing ${folders.length} folders with ${apiEndpoints.length} instance(s)...`);
+    sendLogToRenderer(`All Docker instances ready. Processing ${folders.length} folders with ${apiEndpoints.length} instance(s)...`);
     await yieldToUI(); // Allow UI update
     
     // Process images with the running Docker instances
@@ -1593,7 +1622,7 @@ ipcMain.handle('process-images', async (event, data) => {
     for (let i = 0; i < folders.length; i++) {
       // Check if canceled
       if (processingState.isCanceled) {
-        mainWindow.webContents.send('log', `Processing canceled after ${i} folders`);
+        sendLogToRenderer(`Processing canceled after ${i} folders`);
         await yieldToUI(); // Allow UI update
         break;
       }
@@ -1608,7 +1637,7 @@ ipcMain.handle('process-images', async (event, data) => {
       });
       await yieldToUI(); // Allow UI update
       
-      mainWindow.webContents.send('log', `--- Processing folder ${i+1}/${folders.length}: ${folder} ---`);
+      sendLogToRenderer(`--- Processing folder ${i+1}/${folders.length}: ${folder} ---`);
       await yieldToUI(); // Allow UI update
       
       // Process this folder and its subfolders
@@ -1630,7 +1659,7 @@ ipcMain.handle('process-images', async (event, data) => {
     
     // Log final stats including skipped files
     if (totalSkipped > 0) {
-      mainWindow.webContents.send('log', `Overall processing completed with ${totalSuccess} successes, ${totalFailed} failures, and ${totalSkipped} files skipped as potentially corrupted.`, 'warning');
+      sendLogToRenderer(`Overall processing completed with ${totalSuccess} successes, ${totalFailed} failures, and ${totalSkipped} files skipped as potentially corrupted.`, 'warning');
       await yieldToUI();
     }
     
@@ -1645,7 +1674,7 @@ ipcMain.handle('process-images', async (event, data) => {
       instancesUsed: apiEndpoints.length
     };
   } catch (error) {
-    mainWindow.webContents.send('log', `Error: ${error.message}`, 'error');
+    sendLogToRenderer(`Error: ${error.message}`, 'error');
     await yieldToUI(); // Allow UI update
     throw error;
   } finally {
