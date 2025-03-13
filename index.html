@@ -70,7 +70,7 @@
       font-size: 16px;
     }
     #log {
-      height: 200px;
+      height: 300px; /* Increased from 200px */
       border: 1px solid #ddd;
       border-radius: 4px;
       padding: 10px;
@@ -138,7 +138,7 @@
     }
     .selected-folders {
       margin-top: 10px;
-      max-height: 100px;
+      max-height: 150px; /* Increased from 100px */
       overflow-y: auto;
       font-size: 12px;
     }
@@ -201,6 +201,23 @@
       align-items: center;
       gap: 10px;
       margin-top: 10px;
+    }
+    
+    /* Log options styling */
+    .log-options {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 20px;
+      margin-bottom: 5px;
+    }
+    .auto-scroll-toggle {
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+    }
+    .auto-scroll-toggle input {
+      margin-right: 5px;
     }
     
     /* Dark mode styles */
@@ -429,6 +446,15 @@
       </div>
     </div>
     
+    <!-- Log options with auto-scroll toggle -->
+    <div class="log-options">
+      <span class="hint">Log output:</span>
+      <label class="auto-scroll-toggle">
+        <input type="checkbox" id="autoScrollToggle" checked>
+        Auto-scroll log
+      </label>
+    </div>
+    
     <div id="log">Ready to process images...</div>
   </div>
   
@@ -451,11 +477,32 @@
     const apiInstancesSlider = document.getElementById('apiInstances');
     const apiInstancesValue = document.getElementById('apiInstancesValue');
     const darkModeToggle = document.getElementById('darkModeToggle');
+    const autoScrollToggle = document.getElementById('autoScrollToggle');
     
     // State variables
     let isProcessing = false;
     let isPaused = false;
     let selectedFolders = [];
+    let autoScroll = true;
+    
+    // Auto-scroll detection for log
+    logElement.addEventListener('scroll', function() {
+      if (logElement.scrollTop < logElement.scrollHeight - logElement.clientHeight - 50) {
+        autoScroll = false;
+        autoScrollToggle.checked = false;
+      } else if (logElement.scrollHeight - logElement.scrollTop - logElement.clientHeight < 10) {
+        autoScroll = true;
+        autoScrollToggle.checked = true;
+      }
+    });
+    
+    // Toggle auto-scroll with checkbox
+    autoScrollToggle.addEventListener('change', function() {
+      autoScroll = this.checked;
+      if (autoScroll) {
+        logElement.scrollTop = logElement.scrollHeight;
+      }
+    });
     
     // Dark mode handler
     document.addEventListener('DOMContentLoaded', () => {
@@ -755,11 +802,23 @@
       isProcessing = false;
     });
     
-    // Add log message
+    // Improved log message function with auto-scroll control
     function addLog(message, type = '') {
       const className = type ? ` class="${type}"` : '';
       logElement.innerHTML += `<div${className}>${message}</div>`;
-      logElement.scrollTop = logElement.scrollHeight;
+      
+      // Only auto-scroll if enabled
+      if (autoScroll) {
+        logElement.scrollTop = logElement.scrollHeight;
+      }
+      
+      // Force UI update even when out of focus
+      if (document.hidden) {
+        logElement.style.opacity = 0.999;
+        setTimeout(() => {
+          logElement.style.opacity = 1;
+        }, 0);
+      }
     }
     
     // Handle log messages
@@ -819,9 +878,14 @@
       }
     });
     
-    // Force a UI update when requested
+    // Force a UI update when requested - improved to prevent freezing
     ipcRenderer.on('force-update', () => {
-      // This event just forces the renderer to process the event queue
+      // Force a style change to make the browser re-render
+      if (document.body.style.zoom === '1') {
+        document.body.style.zoom = '1.0000001';
+      } else {
+        document.body.style.zoom = '1';
+      }
     });
   </script>
 </body>
