@@ -556,24 +556,35 @@ ipcMain.handle('select-folders', async () => {
   return [];
 });
 
-// Analyze folder for existing JSON files
+// Analyze folder for existing JSON files - IMPROVED FOR BETTER DETECTION
 ipcMain.handle('analyze-folder', async (event, inputFolder) => {
   try {
+    sendLogToRenderer(`Analyzing folder: ${inputFolder}`);
+    
     // Check if Json folder exists
     const jsonFolder = path.join(inputFolder, 'Json');
+    sendLogToRenderer(`Checking for JSON folder at: ${jsonFolder}`);
+    
     if (!fsSync.existsSync(jsonFolder)) { // Keep using sync for this check
+      sendLogToRenderer(`No JSON folder found at: ${jsonFolder}`);
       return {
         hasJsonFolder: false,
         jsonCount: 0,
         logCount: 0,
-        missingCount: 0
+        missingCount: 0,
+        imageCount: 0
       };
     }
     
+    // Log success
+    sendLogToRenderer(`Found JSON folder at: ${jsonFolder}`);
+    
     // Count JSON files
-    const jsonFiles = (await fs.readdir(jsonFolder)).filter(file => 
+    const allFiles = await fs.readdir(jsonFolder);
+    const jsonFiles = allFiles.filter(file => 
       file.toLowerCase().endsWith('.json') && file !== 'processed_log.json'
     );
+    sendLogToRenderer(`Found ${jsonFiles.length} JSON files in folder.`);
     await yieldToUI(); // Allow UI update
     
     // Check for processing log
@@ -586,6 +597,7 @@ ipcMain.handle('analyze-folder', async (event, inputFolder) => {
         const logContent = await fs.readFile(logFilePath, 'utf8');
         const logData = JSON.parse(logContent);
         logCount = logData.length;
+        sendLogToRenderer(`Found processing log with ${logCount} entries`);
         
         // Check for missing JSON files based on the log
         for (const entry of logData) {
@@ -601,17 +613,28 @@ ipcMain.handle('analyze-folder', async (event, inputFolder) => {
           // Yield to UI every 100 entries to prevent blocking
           if (missing.length % 100 === 0) await yieldToUI();
         }
+        
+        if (missing.length > 0) {
+          sendLogToRenderer(`Found ${missing.length} missing JSON files that were previously processed`);
+        }
       } catch (logError) {
         console.error('Error parsing log file:', logError);
+        sendLogToRenderer(`Error parsing log file: ${logError.message}`, 'error');
       }
+    } else {
+      sendLogToRenderer('No processing log found');
     }
     
     // Get image files count in the input folder
-    const imageFiles = (await fs.readdir(inputFolder)).filter(file => {
+    const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    const folderContents = await fs.readdir(inputFolder);
+    const imageFiles = folderContents.filter(file => {
       const ext = path.extname(file).toLowerCase();
-      return ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext);
+      return imageExts.includes(ext);
     });
     await yieldToUI(); // Allow UI update
+    
+    sendLogToRenderer(`Found ${imageFiles.length} image files in folder`);
     
     return {
       hasJsonFolder: true,
@@ -622,9 +645,11 @@ ipcMain.handle('analyze-folder', async (event, inputFolder) => {
     };
   } catch (error) {
     console.error('Error analyzing folder:', error);
+    sendLogToRenderer(`Error analyzing folder: ${error.message}`, 'error');
     return {
       hasJsonFolder: false,
-      error: error.message
+      error: error.message,
+      imageCount: 0
     };
   }
 });
@@ -714,15 +739,17 @@ async function checkMissingJsonFiles(inputFolder) {
   }
 }
 
-// Handle pause/resume toggle
+// Handle pause/resume toggle - IMPROVED WITH LOGGING
 ipcMain.on('toggle-pause', () => {
   processingState.isPaused = !processingState.isPaused;
+  sendLogToRenderer(`Pause state toggled to: ${processingState.isPaused ? 'PAUSED' : 'RESUMED'}`, processingState.isPaused ? 'warning' : 'success');
   mainWindow.webContents.send('pause-state-changed', processingState.isPaused);
 });
 
-// Handle cancel request
+// Handle cancel request - IMPROVED WITH LOGGING
 ipcMain.on('cancel-processing', () => {
   processingState.isCanceled = true;
+  sendLogToRenderer('Processing canceled by user', 'warning');
   mainWindow.webContents.send('processing-canceled');
 });
 
@@ -805,6 +832,22 @@ async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, 
       
       // Process this batch of images
       const batchPromises = batchFiles.map(async (imageFile, index) => {
+        // Check for cancel more frequently
+        if (processingState.isCanceled) {
+          return {
+            success: false,
+            imagePath: path.join(folderPath, imageFile),
+            timestamp: new Date().toISOString(),
+            status: 'canceled',
+            error: 'Processing canceled by user'
+          };
+        }
+        
+        // Check for pause more frequently
+        while (processingState.isPaused && !processingState.isCanceled) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
         const imagePath = path.join(folderPath, imageFile);
 
         // Check if this file has been identified as corrupted
@@ -832,8 +875,30 @@ async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, 
           formData.append('format', 'json');
           
           try {
+            // Check for cancel/pause again before API call
+            if (processingState.isCanceled) {
+              fileStream.destroy();
+              return {
+                success: false,
+                imagePath,
+                timestamp: new Date().toISOString(),
+                status: 'canceled',
+                error: 'Processing canceled by user'
+              };
+            }
+            
+            // Wait if paused
+            while (processingState.isPaused && !processingState.isCanceled) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
             // Use enhanced retry with circuit breaker
             const response = await enhancedRetryRequest(async () => {
+              // Check for cancel before each retry
+              if (processingState.isCanceled) {
+                throw new Error('Processing canceled by user');
+              }
+              
               return await axiosInstance.post(endpoint, formData, {
                 headers: {
                   ...formData.getHeaders(),
@@ -1021,7 +1086,7 @@ async function processWithMultipleInstances(folderPath, imageFiles, jsonFolder, 
   };
 }
 
-// Process a batch of images with a single API
+// Process a batch of images with a single API - IMPROVED WITH PAUSE/CANCEL CHECKS
 async function processBatch(folderPath, imageFiles, jsonFolder, apiEndpoint, startIndex, batchSize, instanceIndex = 0) {
   const batchPromises = [];
   const batchResults = {
@@ -1053,6 +1118,22 @@ async function processBatch(folderPath, imageFiles, jsonFolder, apiEndpoint, sta
     if ((i - startIndex) % 3 === 0) await yieldToUI();
     
     const processPromise = (async () => {
+      // Check for cancel more frequently
+      if (processingState.isCanceled) {
+        return {
+          success: false,
+          imagePath: path.join(folderPath, imageFile),
+          timestamp: new Date().toISOString(),
+          status: 'canceled',
+          error: 'Processing canceled by user'
+        };
+      }
+      
+      // Check for pause more frequently
+      while (processingState.isPaused && !processingState.isCanceled) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
       const imagePath = path.join(folderPath, imageFile);
       
       // Check if this file has been identified as corrupted
@@ -1080,8 +1161,30 @@ async function processBatch(folderPath, imageFiles, jsonFolder, apiEndpoint, sta
         formData.append('format', 'json');
         
         try {
+          // Check for cancel/pause again before API call
+          if (processingState.isCanceled) {
+            fileStream.destroy();
+            return {
+              success: false,
+              imagePath,
+              timestamp: new Date().toISOString(),
+              status: 'canceled',
+              error: 'Processing canceled by user'
+            };
+          }
+          
+          // Wait if paused
+          while (processingState.isPaused && !processingState.isCanceled) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          
           // Use enhanced retry with circuit breaker
           const response = await enhancedRetryRequest(async () => {
+            // Check for cancel before each retry
+            if (processingState.isCanceled) {
+              throw new Error('Processing canceled by user');
+            }
+            
             return await axiosInstance.post(apiEndpoint, formData, {
               headers: {
                 ...formData.getHeaders(),
@@ -1151,7 +1254,7 @@ async function processBatch(folderPath, imageFiles, jsonFolder, apiEndpoint, sta
   return batchResults;
 }
 
-// Process a single folder and its subfolders if requested
+// Process a single folder and its subfolders if requested - IMPROVED FOR FOLDER DETECTION
 async function processFolder(folderPath, apiEndpoints, confidenceThreshold, processMode, includeSubfolders) {
   try {
     // Reset corrupted files tracking when starting a new folder
@@ -1200,7 +1303,10 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
     // Create Json folder for this folder
     const jsonFolder = path.join(folderPath, 'Json');
     if (!fsSync.existsSync(jsonFolder)) { // Keep using sync for this check
+      sendLogToRenderer(`Creating JSON folder: ${jsonFolder}`);
       await fs.mkdir(jsonFolder, { recursive: true });
+    } else {
+      sendLogToRenderer(`Found existing JSON folder: ${jsonFolder}`);
     }
     
     // Determine which files to process based on mode
@@ -1213,6 +1319,9 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
       
     } else if (processMode === 'new') {
       // For "new" images: Check if they have JSON files, if not, they're new
+      sendLogToRenderer(`Using "new" mode for folder: ${path.basename(folderPath)}`);
+      sendLogToRenderer(`Checking for existing JSON files in: ${jsonFolder}`);
+      
       const newFiles = [];
       let existingJsonCount = 0;
       
@@ -1236,6 +1345,9 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
       
     } else if (processMode === 'missing') {
       // For "missing" files: Same logic as "new" but different messaging
+      sendLogToRenderer(`Using "missing" mode for folder: ${path.basename(folderPath)}`);
+      sendLogToRenderer(`Checking for missing JSON files in: ${jsonFolder}`);
+      
       const missingFiles = [];
       let jsonCount = 0;
       
@@ -1423,7 +1535,7 @@ async function processFolder(folderPath, apiEndpoints, confidenceThreshold, proc
   }
 }
 
-// COMPLETELY REWRITTEN: Process multiple folders with Docker startup on button click
+// FIXED: Process multiple folders with Docker startup on button click
 // Now with health checks for long-running processes
 ipcMain.handle('process-images', async (event, data) => {
   const { 
@@ -1435,11 +1547,20 @@ ipcMain.handle('process-images', async (event, data) => {
     apiInstances
   } = data;
   
-  // Reset processing state
-  processingState = {
-    isPaused: false,
-    isCanceled: false
-  };
+  // Fixed: Don't reset state if already canceled
+  if (processingState.isCanceled) {
+    sendLogToRenderer('Keeping canceled state from previous operation');
+    await yieldToUI(); // Allow UI update
+  } else {
+    // Only reset if not already canceled
+    processingState = {
+      isPaused: false,
+      isCanceled: false
+    };
+  }
+  
+  // Log current processing state
+  sendLogToRenderer(`Beginning processing with state: isPaused=${processingState.isPaused}, isCanceled=${processingState.isCanceled}`);
   
   // Reset corrupted files tracking for new processing session
   corruptedFiles.clear();
