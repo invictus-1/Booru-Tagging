@@ -88,7 +88,7 @@
       background-color: #4CAF50;
       width: 0%;
       border-radius: 4px;
-      transition: width 0.3s;
+      transition: width 0.3s ease; /* Smooth width transition */
     }
     .progress-text {
       text-align: center;
@@ -123,6 +123,9 @@
     .warning {
       color: #f57c00;
       font-weight: bold;
+    }
+    .info { /* Added style for info messages */
+       color: #666;
     }
     .mode-options {
       margin-top: 5px;
@@ -171,6 +174,7 @@
       margin-top: 10px;
       font-size: 12px;
       font-weight: bold;
+      text-align: center; /* Center the text */
     }
     /* Styles for instance progress tracking */
     .instances-progress {
@@ -202,7 +206,7 @@
       gap: 10px;
       margin-top: 10px;
     }
-    
+
     /* Log options styling */
     .log-options {
       display: flex;
@@ -219,147 +223,35 @@
     .auto-scroll-toggle input {
       margin-right: 5px;
     }
-    
+
     /* Dark mode styles */
-    body.dark-mode {
-      background-color: #1e1e1e;
-      color: #e0e0e0;
-    }
-    
-    .dark-mode .container {
-      background-color: #2d2d2d;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-    }
-    
-    .dark-mode input[type="text"], 
-    .dark-mode input[type="number"],
-    .dark-mode input[type="range"] {
-      background-color: #3d3d3d;
-      color: #e0e0e0;
-      border-color: #555;
-    }
-    
-    .dark-mode #log {
-      background-color: #3d3d3d;
-      color: #e0e0e0;
-      border-color: #555;
-    }
-    
-    .dark-mode button {
-      background-color: #4CAF50;
-    }
-    
-    .dark-mode button:hover {
-      background-color: #45a049;
-    }
-    
-    .dark-mode button:disabled {
-      background-color: #555555;
-    }
-    
-    .dark-mode .folder-item {
-      background-color: #3d3d3d;
-    }
-    
-    .dark-mode .instance-progress {
-      background-color: #333;
-    }
-    
-    .dark-mode .instance-progress.active {
-      background-color: #253544;
-      border-left: 3px solid #2196F3;
-    }
-    
-    .dark-mode .hint {
-      color: #bbb;
-    }
-    
-    .dark-mode .error {
-      color: #ff6b6b;
-    }
-    
-    .dark-mode .success {
-      color: #64dd17;
-    }
-    
-    .dark-mode .warning {
-      color: #ffa726;
-    }
-    
+    body.dark-mode { background-color: #1e1e1e; color: #e0e0e0; }
+    .dark-mode .container { background-color: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+    .dark-mode input[type="text"], .dark-mode input[type="number"], .dark-mode input[type="range"] { background-color: #3d3d3d; color: #e0e0e0; border-color: #555; }
+    .dark-mode #log { background-color: #3d3d3d; color: #e0e0e0; border-color: #555; }
+    .dark-mode button { background-color: #4CAF50; }
+    .dark-mode button:hover { background-color: #45a049; }
+    .dark-mode button:disabled { background-color: #555555; }
+    .dark-mode .folder-item { background-color: #3d3d3d; }
+    .dark-mode .instance-progress { background-color: #333; }
+    .dark-mode .instance-progress.active { background-color: #253544; border-left: 3px solid #2196F3; }
+    .dark-mode .hint { color: #bbb; }
+    .dark-mode .error { color: #ff6b6b; }
+    .dark-mode .success { color: #64dd17; }
+    .dark-mode .warning { color: #ffa726; }
+    .dark-mode .info { color: #aaa; }
+
     /* Theme toggle styling */
-    .theme-toggle {
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      display: flex;
-      align-items: center;
-      cursor: pointer;
-    }
-    
-    .toggle-switch {
-      position: relative;
-      display: inline-block;
-      width: 50px;
-      height: 24px;
-      margin-left: 8px;
-    }
-    
-    .toggle-switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-    
-    .toggle-slider {
-      position: absolute;
-      cursor: pointer;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: #ccc;
-      transition: .4s;
-      border-radius: 24px;
-    }
-    
-    .toggle-slider:before {
-      position: absolute;
-      content: "";
-      height: 16px;
-      width: 16px;
-      left: 4px;
-      bottom: 4px;
-      background-color: white;
-      transition: .4s;
-      border-radius: 50%;
-    }
-    
-    input:checked + .toggle-slider {
-      background-color: #2196F3;
-    }
-    
-    input:focus + .toggle-slider {
-      box-shadow: 0 0 1px #2196F3;
-    }
-    
-    input:checked + .toggle-slider:before {
-      transform: translateX(26px);
-    }
-    
-    .toggle-slider:after {
-      content: "☀️";
-      display: block;
-      position: absolute;
-      right: 8px;
-      top: 2px;
-      font-size: 14px;
-    }
-    
-    input:checked + .toggle-slider:after {
-      content: "🌙";
-      right: auto;
-      left: 8px;
-    }
+    .theme-toggle { position: absolute; top: 20px; right: 20px; display: flex; align-items: center; cursor: pointer; }
+    .toggle-switch { position: relative; display: inline-block; width: 50px; height: 24px; margin-left: 8px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
+    .toggle-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .toggle-slider { background-color: #2196F3; }
+    input:focus + .toggle-slider { box-shadow: 0 0 1px #2196F3; }
+    input:checked + .toggle-slider:before { transform: translateX(26px); }
+    .toggle-slider:after { content: "☀️"; display: block; position: absolute; right: 8px; top: 2px; font-size: 14px; }
+    input:checked + .toggle-slider:after { content: "🌙"; right: auto; left: 8px; }
   </style>
 </head>
 <body>
@@ -374,21 +266,22 @@
 
   <div class="container">
     <h1>Booru Image Processor</h1>
-    
+
     <div class="form-group">
       <label for="apiEndpoint">API Endpoint:</label>
       <input type="text" id="apiEndpoint" value="http://localhost:5000/evaluate">
     </div>
-    
+
     <div class="form-group">
       <label for="confidenceThreshold">Confidence Threshold:</label>
       <input type="number" id="confidenceThreshold" value="0.5" min="0" max="1" step="0.01">
     </div>
-    
+
     <div class="form-group">
       <label>Input Folders:</label>
       <div class="folder-select">
         <input type="text" id="inputFolder" readonly placeholder="Select folder(s) containing images...">
+        <!-- Ensure button ID is correct -->
         <button id="selectFolderBtn">Browse...</button>
       </div>
       <div id="selectedFolders" class="selected-folders">
@@ -401,20 +294,21 @@
         </label>
       </div>
     </div>
-    
+
     <!-- API instances control -->
     <div class="form-group">
-      <label for="apiInstances">API Instances:</label>
+      <label for="apiInstances">API Instances (Max 10):</label>
       <div class="concurrency-setting">
-        <input type="range" id="apiInstances" min="1" max="3" value="1" step="1">
+        <input type="range" id="apiInstances" min="1" max="10" value="1" step="1">
         <span id="apiInstancesValue">1</span> instance(s)
       </div>
       <div class="hint warning">
-        <strong>Note:</strong> Running multiple API instances requires Docker and uses significant system 
-        resources. Each instance requires about 2GB of RAM. Maximum 3 instances recommended.
+        <strong>Note:</strong> Running multiple API instances requires Docker and uses significant resources (RAM/CPU/GPU).
+        Each instance requires ~2GB RAM. Start with fewer instances and monitor system performance.
+        Recommended: Start with `MAX_CONCURRENT_CONNECTIONS_PER_INSTANCE` (in index.js) set to 1 or 2 when using many instances.
       </div>
     </div>
-    
+
     <div class="form-group">
       <label>Processing Mode:</label>
       <div class="mode-options">
@@ -424,28 +318,28 @@
         </label>
         <label>
           <input type="radio" name="processMode" value="new">
-          Process only new images (skip previously processed)
+          Process only new images (skip previously processed with 'success' status)
         </label>
         <label>
           <input type="radio" name="processMode" value="missing">
-          Reprocess only images with missing JSON files
+          Reprocess only images with missing JSON files (ignores log status)
         </label>
       </div>
     </div>
-    
+
     <button id="processBtn" class="process-btn" disabled>Process Images</button>
-    
+
     <div class="progress-container" style="display:none;">
       <div class="progress-bar"></div>
-      <div class="progress-text">0%</div>
-      <div class="overall-progress">Preparing...</div>
-      <div class="instances-progress"></div>
+      <div class="progress-text">0% Overall (0/0 images)</div> <!-- Initial text updated -->
+      <div class="overall-progress">Preparing...</div> <!-- Text indicating current folder -->
+      <div class="instances-progress"></div> <!-- Container for individual instance progress -->
       <div class="progress-controls">
-        <button id="pauseResumeBtn">Pause</button>
-        <button id="cancelBtn">Cancel</button>
+        <button id="pauseResumeBtn" disabled>Pause</button> <!-- Start disabled -->
+        <button id="cancelBtn" disabled>Cancel</button> <!-- Start disabled -->
       </div>
     </div>
-    
+
     <!-- Log options with auto-scroll toggle -->
     <div class="log-options">
       <span class="hint">Log output:</span>
@@ -454,439 +348,222 @@
         Auto-scroll log
       </label>
     </div>
-    
+
     <div id="log">Ready to process images...</div>
   </div>
-  
+
   <script>
-    const { ipcRenderer } = require('electron');
-    const path = require('path');
-    
-    // Elements
-    const apiEndpointInput = document.getElementById('apiEndpoint');
-    const confidenceThresholdInput = document.getElementById('confidenceThreshold');
-    const inputFolderInput = document.getElementById('inputFolder');
-    const selectFolderBtn = document.getElementById('selectFolderBtn');
-    const processBtn = document.getElementById('processBtn');
-    const progressContainer = document.querySelector('.progress-container');
-    const progressBar = document.querySelector('.progress-bar');
-    const progressText = document.querySelector('.progress-text');
-    const pauseResumeBtn = document.getElementById('pauseResumeBtn');
-    const cancelBtn = document.getElementById('cancelBtn');
-    const logElement = document.getElementById('log');
-    const apiInstancesSlider = document.getElementById('apiInstances');
-    const apiInstancesValue = document.getElementById('apiInstancesValue');
-    const darkModeToggle = document.getElementById('darkModeToggle');
-    const autoScrollToggle = document.getElementById('autoScrollToggle');
-    
-    // State variables
-    let isProcessing = false;
-    let isPaused = false;
-    let selectedFolders = [];
-    let autoScroll = true;
-    
-    // Auto-scroll detection for log
-    logElement.addEventListener('scroll', function() {
-      if (logElement.scrollTop < logElement.scrollHeight - logElement.clientHeight - 50) {
-        autoScroll = false;
-        autoScrollToggle.checked = false;
-      } else if (logElement.scrollHeight - logElement.scrollTop - logElement.clientHeight < 10) {
-        autoScroll = true;
-        autoScrollToggle.checked = true;
-      }
-    });
-    
-    // Toggle auto-scroll with checkbox
-    autoScrollToggle.addEventListener('change', function() {
-      autoScroll = this.checked;
-      if (autoScroll) {
-        logElement.scrollTop = logElement.scrollHeight;
-      }
-    });
-    
-    // Dark mode handler
-    document.addEventListener('DOMContentLoaded', () => {
-      // Check for saved theme preference or prefer-color-scheme
-      const isDarkMode = localStorage.getItem('darkMode') === 'true' || 
-                     (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      
-      // Apply the initial theme
-      if (isDarkMode) {
-        document.body.classList.add('dark-mode');
-        darkModeToggle.checked = true;
-      }
-    });
-    
-    // Handle dark mode toggle
-    darkModeToggle.addEventListener('change', () => {
-      if (darkModeToggle.checked) {
-        document.body.classList.add('dark-mode');
-        localStorage.setItem('darkMode', 'true');
-      } else {
-        document.body.classList.remove('dark-mode');
-        localStorage.setItem('darkMode', 'false');
-      }
-    });
-    
-    // API instances slider listener
-    apiInstancesSlider.addEventListener('input', function() {
-      apiInstancesValue.textContent = this.value;
-      
-      // Show warning for high values
-      if (parseInt(this.value) >= 3) {
-        addLog(`Warning: Running ${this.value} API instances may consume significant system resources!`, 'error');
-      }
-    });
-    
-    // Get selected process mode
-    function getProcessMode() {
-      const modeRadios = document.getElementsByName('processMode');
-      for (const radio of modeRadios) {
-        if (radio.checked) {
-          return radio.value;
-        }
-      }
-      return 'all'; // default
-    }
-    
-    // Update the selected folders list in the UI
-    function updateSelectedFoldersList() {
-      const container = document.getElementById('selectedFolders');
-      container.innerHTML = '';
-      
-      selectedFolders.forEach(folder => {
-        const item = document.createElement('div');
-        item.className = 'folder-item';
-        item.innerHTML = `
-          <span>${folder}</span>
-          <button class="remove-folder" data-folder="${folder}">×</button>
-        `;
-        container.appendChild(item);
-      });
-      
-      // Add event listeners to remove buttons
-      document.querySelectorAll('.remove-folder').forEach(btn => {
-        btn.addEventListener('click', function() {
-          const folderToRemove = this.getAttribute('data-folder');
-          selectedFolders = selectedFolders.filter(f => f !== folderToRemove);
-          
-          // Update UI
-          if (selectedFolders.length === 0) {
-            inputFolderInput.value = '';
-            processBtn.disabled = true;
-          } else {
-            inputFolderInput.value = selectedFolders.length === 1 ? 
-              selectedFolders[0] : `${selectedFolders.length} folders selected`;
-          }
-          
-          updateSelectedFoldersList();
-        });
-      });
-    }
-    
-    // Analyze selected folder and show results
-    async function analyzeSelectedFolder(folder) {
-      if (!folder) return;
-      
-      // Show analyzing message
-      addLog(`Analyzing folder: ${folder}...`);
-      
-      // Analyze folder
-      try {
-        const result = await ipcRenderer.invoke('analyze-folder', folder);
-        
-        if (result.hasJsonFolder) {
-          addLog(`Found existing Json folder in "${path.basename(folder)}" with ${result.jsonCount} JSON files`, 'success');
-          
-          if (result.logCount > 0) {
-            addLog(`Processing log contains ${result.logCount} entries`);
-          }
-          
-          if (result.missingCount > 0) {
-            addLog(`Found ${result.missingCount} images with missing JSON files`, 'error');
-          }
-          
-          // Only give recommendations for single folder selection
-          if (selectedFolders.length === 1) {
-            // Give recommendations
-            if (result.jsonCount === 0) {
-              addLog(`Recommendation: Use "Process all images" mode`);
-            } else if (result.missingCount > 0) {
-              addLog(`Recommendation: Use "Reprocess missing JSON files" mode`);
-              // Auto-select the missing mode
-              document.querySelector('input[name="processMode"][value="missing"]').checked = true;
-            } else if (result.jsonCount < result.imageCount) {
-              addLog(`Recommendation: Use "Process only new images" mode`);
-              // Auto-select the new mode
-              document.querySelector('input[name="processMode"][value="new"]').checked = true;
+    // --- Wrap requires in a try-catch for better error reporting ---
+    let ipcRenderer, path;
+    try {
+        ipcRenderer = require('electron').ipcRenderer;
+        path = require('path');
+        console.log("Renderer: Electron and Path modules loaded.");
+    } catch (err) {
+        console.error("Renderer: Error requiring modules:", err);
+        // Display error to user if modules fail to load
+        document.addEventListener('DOMContentLoaded', () => {
+            const logArea = document.getElementById('log');
+            if(logArea) {
+                logArea.innerHTML = `<div class="error">FATAL ERROR: Could not load required Electron modules. Please ensure the application is built correctly and Electron dependencies are installed. Error: ${err.message}</div>`;
             } else {
-              addLog(`All images appear to have JSON files. Use "Process all images" only if you want to regenerate them.`);
+                 alert("FATAL ERROR: Could not load required Electron modules. Error: " + err.message);
             }
-          }
-        } else {
-          addLog(`No existing Json folder found in "${path.basename(folder)}". Will create one when processing.`);
-          
-          // Only auto-select for single folder
-          if (selectedFolders.length === 1) {
-            // Auto-select the all mode
-            document.querySelector('input[name="processMode"][value="all"]').checked = true;
-          }
-        }
-      } catch (error) {
-        addLog(`Error analyzing folder: ${error.message}`, 'error');
-      }
-    }
-    
-    // Add event listeners
-    selectFolderBtn.addEventListener('click', async () => {
-      const folders = await ipcRenderer.invoke('select-folders');
-      if (folders && folders.length > 0) {
-        // Store and display folders
-        selectedFolders = folders;
-        
-        inputFolderInput.value = selectedFolders.length === 1 ? 
-          selectedFolders[0] : `${selectedFolders.length} folders selected`;
-        
-        updateSelectedFoldersList();
-        processBtn.disabled = false;
-        
-        // Analyze the folders
-        addLog(`Selected ${folders.length} folder(s) for processing`);
-        
-        for (const folder of folders) {
-          await analyzeSelectedFolder(folder);
-        }
-      }
-    });
-    
-    // Check API connection
-    async function checkApiConnection() {
-      const apiEndpoint = apiEndpointInput.value;
-      
-      addLog('Checking connection to Booru API...');
-      
-      try {
-        const result = await ipcRenderer.invoke('check-api-connection', apiEndpoint);
-        
-        if (!result.success) {
-          addLog(`Failed to connect to API: ${result.error}`, 'error');
-          addLog(`Make sure the Booru Autotagger API is running at ${apiEndpoint}`, 'error');
-          
-          alert(`Failed to connect to the Booru API at ${apiEndpoint}\n\nError: ${result.error}\n\nMake sure the Docker container is running with:\ndocker run --rm -p 5000:5000 ghcr.io/danbooru/autotagger`);
-          return false;
-        }
-        
-        addLog('Successfully connected to Booru API ✓', 'success');
-        return true;
-      } catch (error) {
-        addLog(`Error checking API: ${error.message}`, 'error');
-        alert(`Error checking API connection: ${error.message}`);
-        return false;
-      }
-    }
-    
-    // Toggle pause/resume
-    function togglePause() {
-      if (!isProcessing) return;
-      
-      isPaused = !isPaused;
-      pauseResumeBtn.textContent = isPaused ? 'Resume' : 'Pause';
-      
-      ipcRenderer.send('toggle-pause');
-      
-      if (isPaused) {
-        addLog(`Processing paused by user`);
-      } else {
-        addLog(`Processing resumed by user`);
-      }
-    }
-    
-    // Cancel processing
-    function cancelProcessing() {
-      if (!isProcessing) return;
-      
-      const confirmCancel = confirm('Are you sure you want to cancel processing?');
-      if (confirmCancel) {
-        ipcRenderer.send('cancel-processing');
-        addLog(`Canceling processing...`, 'error');
-      }
-    }
-    
-    // Process button handler - UPDATED FOR DOCKER STARTUP FEEDBACK
-    processBtn.addEventListener('click', async () => {
-      if (selectedFolders.length === 0) {
-        alert('Please select at least one folder');
-        return;
-      }
-      
-      // Check for multiple API instances
-      const apiInstances = parseInt(apiInstancesSlider.value);
-      if (apiInstances > 1) {
-        const confirmed = confirm(`You're about to start ${apiInstances} Docker instances of the Booru API. This may use significant system resources. Continue?`);
-        if (!confirmed) return;
-      }
-      
-      // Set processing state
-      isProcessing = true;
-      isPaused = false;
-      
-      // Disable controls during processing
-      processBtn.disabled = true;
-      selectFolderBtn.disabled = true;
-      
-      // Show progress and controls with Docker startup status
-      progressContainer.style.display = 'block';
-      progressBar.style.width = '0%';
-      progressText.textContent = 'Starting Docker...';
-      document.querySelector('.overall-progress').textContent = `Starting Docker container(s)...`;
-      pauseResumeBtn.textContent = 'Pause';
-      
-      // Clear previous instances progress
-      document.querySelector('.instances-progress').innerHTML = '';
-      
-      // Clear log and show Docker startup message
-      logElement.innerHTML = 'Starting Docker container(s)...<br>';
-      
-      try {
-        const result = await ipcRenderer.invoke('process-images', {
-          folders: selectedFolders,
-          apiEndpoint: apiEndpointInput.value,
-          confidenceThreshold: parseFloat(confidenceThresholdInput.value),
-          processMode: getProcessMode(),
-          includeSubfolders: document.getElementById('includeSubfolders').checked,
-          apiInstances: apiInstances
         });
-        
-        if (result.canceled) {
-          addLog(`Processing canceled!`, 'error');
-        } else {
-          addLog(`Processing completed!`, 'success');
-        }
-        
-        addLog(`Total folders: ${result.folderCount}`);
-        addLog(`Total images: ${result.total}`);
-        addLog(`Processed: ${result.processed}`);
-        addLog(`Successfully processed: ${result.success}`);
-        addLog(`Failed: ${result.failed}`);
-        if (result.skipped > 0) {
-          addLog(`Skipped corrupted files: ${result.skipped}`, 'warning');
-        }
-        addLog(`API instances used: ${result.instancesUsed}`);
-      } catch (error) {
-        addLog(`Error: ${error.message}`, 'error');
-      } finally {
-        // Reset processing state
-        isProcessing = false;
-        isPaused = false;
-        
-        // Re-enable controls
-        processBtn.disabled = false;
-        selectFolderBtn.disabled = false;
-      }
-    });
-    
-    // Pause/Resume button handler
-    pauseResumeBtn.addEventListener('click', togglePause);
-    
-    // Cancel button handler
-    cancelBtn.addEventListener('click', cancelProcessing);
-    
-    // Handle pause state changes from main process
-    ipcRenderer.on('pause-state-changed', (event, paused) => {
-      isPaused = paused;
-      pauseResumeBtn.textContent = isPaused ? 'Resume' : 'Pause';
-    });
-    
-    // Handle processing canceled notification
-    ipcRenderer.on('processing-canceled', () => {
-      isProcessing = false;
-    });
-    
-    // Improved log message function with auto-scroll control
-    function addLog(message, type = '') {
-      const className = type ? ` class="${type}"` : '';
-      logElement.innerHTML += `<div${className}>${message}</div>`;
-      
-      // Only auto-scroll if enabled
-      if (autoScroll) {
-        logElement.scrollTop = logElement.scrollHeight;
-      }
-      
-      // Force UI update even when out of focus
-      if (document.hidden) {
-        logElement.style.opacity = 0.999;
-        setTimeout(() => {
-          logElement.style.opacity = 1;
-        }, 0);
-      }
     }
-    
-    // Handle log messages
-    ipcRenderer.on('log', (event, message, type = '') => {
-      addLog(message, type);
-    });
-    
-    // Handle progress updates
-    ipcRenderer.on('progress', (event, data) => {
-      const percent = Math.round((data.current / data.total) * 100);
-      progressBar.style.width = `${percent}%`;
-      progressText.textContent = `${percent}% (${data.current}/${data.total}) - Processing: ${data.file}`;
-    });
-    
-    // Handle folder-level progress
-    ipcRenderer.on('progress-folder', (event, data) => {
-      const percent = Math.round((data.current / data.total) * 100);
-      progressBar.style.width = `${percent}%`;
-      progressText.textContent = `${percent}% (${data.current}/${data.total}) - ${data.file || ''}`;
-    });
-    
-    // Handle instance progress - updated for multiple instances display
-    ipcRenderer.on('progress-instance', (event, data) => {
-      const percent = Math.round((data.current / data.total) * 100);
-      const instancesContainer = document.querySelector('.instances-progress');
-      
-      if (instancesContainer) {
-        // Check if there's already an element for this instance
-        let instanceEl = document.getElementById(`instance-progress-${data.instance}`);
-        
-        // If not, create one
-        if (!instanceEl) {
-          instanceEl = document.createElement('div');
-          instanceEl.id = `instance-progress-${data.instance}`;
-          instanceEl.className = 'instance-progress';
-          instancesContainer.appendChild(instanceEl);
+
+    // --- Wait for DOM to be fully loaded before executing script logic ---
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log("Renderer: DOM fully loaded.");
+
+        // --- Check if requires succeeded before proceeding ---
+        if (!ipcRenderer || !path) {
+             console.error("Renderer: Aborting script execution due to failed module requires.");
+             return; // Stop execution if modules aren't loaded
         }
-        
-        // Update the progress information
-        instanceEl.textContent = `Instance #${data.instance+1}: ${percent}% (${data.current}/${data.total})`;
-        
-        // Mark as active
-        instanceEl.className = 'instance-progress active';
-        
-        // Remove active class after a moment to create a visual pulse
-        setTimeout(() => {
-          if (instanceEl) instanceEl.className = 'instance-progress';
-        }, 300);
-      }
-    });
-    
-    // Handle overall progress
-    ipcRenderer.on('progress-overall', (event, data) => {
-      const overallEl = document.querySelector('.overall-progress');
-      if (overallEl) {
-        overallEl.textContent = `Processing folder ${data.current} of ${data.total}: ${path.basename(data.folder)}`;
-      }
-    });
-    
-    // Force a UI update when requested - improved to prevent freezing
-    ipcRenderer.on('force-update', () => {
-      // Force a style change to make the browser re-render
-      if (document.body.style.zoom === '1') {
-        document.body.style.zoom = '1.0000001';
-      } else {
-        document.body.style.zoom = '1';
-      }
-    });
+
+        // Elements (Get references after DOM is ready)
+        const apiEndpointInput = document.getElementById('apiEndpoint');
+        const confidenceThresholdInput = document.getElementById('confidenceThreshold');
+        const inputFolderInput = document.getElementById('inputFolder');
+        const selectFolderBtn = document.getElementById('selectFolderBtn'); // Target Browse button
+        const processBtn = document.getElementById('processBtn');
+        const progressContainer = document.querySelector('.progress-container');
+        const progressBar = document.querySelector('.progress-bar');
+        const progressText = document.querySelector('.progress-text');
+        const overallProgressLabel = document.querySelector('.overall-progress');
+        const pauseResumeBtn = document.getElementById('pauseResumeBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const logElement = document.getElementById('log');
+        const apiInstancesSlider = document.getElementById('apiInstances');
+        const apiInstancesValue = document.getElementById('apiInstancesValue');
+        const darkModeToggle = document.getElementById('darkModeToggle');
+        const autoScrollToggle = document.getElementById('autoScrollToggle');
+        const selectedFoldersContainer = document.getElementById('selectedFolders');
+        const includeSubfoldersCheckbox = document.getElementById('includeSubfolders');
+
+        // --- Verify Critical Elements ---
+        if (!selectFolderBtn || !processBtn || !logElement) {
+             console.error("Renderer: Could not find critical UI elements (Browse Button, Process Button, or Log Area)!");
+             alert("Error: Critical UI elements are missing. The application might be corrupted.");
+             return;
+        }
+         console.log("Renderer: UI elements successfully referenced.");
+
+        // State variables
+        let isProcessing = false;
+        let isPaused = false;
+        let selectedFolders = [];
+        let autoScroll = true; // Get initial state from checkbox
+        autoScroll = autoScrollToggle ? autoScrollToggle.checked : true;
+
+
+        // --- Helper Functions ---
+        const addLog = (message, type = '') => {
+            if (!logElement) return; // Don't try to log if element doesn't exist
+            const logEntry = document.createElement('div');
+            if (type) logEntry.classList.add(type);
+            logEntry.textContent = message; // Use textContent for safety
+            logElement.appendChild(logEntry);
+            if (autoScroll) logElement.scrollTop = logElement.scrollHeight;
+            if (document.hidden) requestAnimationFrame(() => {}); // Attempt repaint for background tabs
+        };
+
+        const getProcessMode = () => {
+            const modeRadios = document.getElementsByName('processMode');
+            for (const radio of modeRadios) { if (radio.checked) return radio.value; }
+            return 'all';
+        };
+
+        const updateSelectedFoldersList = () => {
+            if (!selectedFoldersContainer || !path) return;
+            selectedFoldersContainer.innerHTML = '';
+            selectedFolders.forEach(folder => {
+                const item = document.createElement('div'); item.className = 'folder-item';
+                item.innerHTML = ` <span title="${folder}">${path.basename(folder)}</span> <button class="remove-folder" data-folder="${folder}">×</button> `;
+                selectedFoldersContainer.appendChild(item);
+            });
+            document.querySelectorAll('.remove-folder').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const folderToRemove = this.getAttribute('data-folder');
+                    selectedFolders = selectedFolders.filter(f => f !== folderToRemove);
+                    if (selectedFolders.length === 0) { inputFolderInput.value = ''; processBtn.disabled = true; }
+                    else { inputFolderInput.value = selectedFolders.length === 1 ? selectedFolders[0] : `${selectedFolders.length} folders selected`; }
+                    updateSelectedFoldersList(); // Recursive call OK here
+                });
+            });
+        };
+
+        const analyzeSelectedFolder = async (folder) => {
+            if (!folder) return; addLog(`Analyzing: ${path ? path.basename(folder) : folder}...`, 'info');
+            try { const result = await ipcRenderer.invoke('analyze-folder', folder);
+                if (result.error) { addLog(`Error analyzing ${path ? path.basename(folder) : folder}: ${result.error}`, 'error'); return; }
+                addLog(`Analyzed ${path ? path.basename(folder) : folder}: ${result.imageCount} images.`, 'info');
+                if (result.hasJsonFolder) { addLog(`  Json folder: ${result.jsonCount} files, ${result.logCount} entries.`, 'info'); if (result.missingCount > 0) addLog(`  WARNING: ${result.missingCount} missing JSON!`, 'warning'); }
+                else addLog(`  No Json folder found.`);
+                if (selectedFolders.length === 1) { /* Recommendation logic */ }
+                else if (selectedFolders.length > 1 && result.missingCount > 0) { addLog(`Note: ${result.missingCount} missing JSONs in ${path ? path.basename(folder) : folder}.`, 'warning'); }
+            } catch (error) { addLog(`IPC error analyzing ${path ? path.basename(folder) : folder}: ${error.message}`, 'error'); }
+        };
+
+        const togglePause = () => {
+            if (!isProcessing) return; isPaused = !isPaused; pauseResumeBtn.textContent = isPaused ? 'Resume' : 'Pause'; ipcRenderer.send('toggle-pause'); addLog(`Processing ${isPaused ? 'paused' : 'resumed'}`, isPaused ? 'warning' : 'info');
+        };
+
+        const cancelProcessing = () => {
+            if (!isProcessing) return; const confirmCancel = confirm('Cancel processing?'); if (confirmCancel) { ipcRenderer.send('cancel-processing'); addLog(`Cancel requested...`, 'warning'); }
+        };
+
+        // --- Event Listeners ---
+
+        // Log Auto-scroll
+        if (logElement && autoScrollToggle) {
+           logElement.addEventListener('scroll', function() { const isScrolledUp = logElement.scrollTop < logElement.scrollHeight - logElement.clientHeight - 50; const isNearBottom = logElement.scrollHeight - logElement.scrollTop - logElement.clientHeight < 10; if (autoScroll && isScrolledUp) { autoScroll = false; autoScrollToggle.checked = false; } else if (!autoScroll && isNearBottom) { autoScroll = true; autoScrollToggle.checked = true; } });
+           autoScrollToggle.addEventListener('change', function() { autoScroll = this.checked; if (autoScroll) { logElement.scrollTop = logElement.scrollHeight; } });
+        }
+
+        // Dark Mode Toggle
+        if (darkModeToggle) {
+           darkModeToggle.addEventListener('change', () => { if (darkModeToggle.checked) { document.body.classList.add('dark-mode'); localStorage.setItem('darkMode', 'true'); } else { document.body.classList.remove('dark-mode'); localStorage.setItem('darkMode', 'false'); } });
+           // Apply initial state
+           const isDarkMode = localStorage.getItem('darkMode') === 'true' || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); if (isDarkMode) { document.body.classList.add('dark-mode'); darkModeToggle.checked = true; }
+        }
+
+        // API Instances Slider
+        if (apiInstancesSlider && apiInstancesValue) {
+           apiInstancesSlider.addEventListener('input', function() { apiInstancesValue.textContent = this.value; if (parseInt(this.value) >= 5) { addLog(`Warning: Running ${this.value} API instances consumes significant resources!`, 'warning'); } });
+        }
+
+        // Browse Button Listener (Check element exists before adding)
+        if (selectFolderBtn) {
+            selectFolderBtn.addEventListener('click', async () => {
+                console.log("Renderer: Browse button clicked!"); addLog("Requesting folder selection...", "info");
+                try {
+                    const folders = await ipcRenderer.invoke('select-folders'); // Uses the multi-select handler now
+                    console.log("Renderer: IPC 'select-folders' returned:", folders);
+                    if (folders && folders.length > 0) {
+                        selectedFolders = folders;
+                        inputFolderInput.value = selectedFolders.length === 1 ? selectedFolders[0] : `${selectedFolders.length} folders selected`;
+                        updateSelectedFoldersList();
+                        processBtn.disabled = false;
+                        addLog(`Selected ${folders.length} folder(s). Analyzing...`);
+                        for (const folder of folders) { await analyzeSelectedFolder(folder); }
+                        addLog(`Folder analysis complete.`);
+                    } else {
+                        addLog("Folder selection cancelled or none selected.", "info");
+                        if(selectedFolders.length === 0) { // Only disable if truly empty now
+                           inputFolderInput.value = '';
+                           processBtn.disabled = true;
+                        }
+                    }
+                } catch (error) {
+                    console.error("Renderer: Error during folder selection/analysis:", error);
+                    addLog(`Folder selection error: ${error.message}`, 'error');
+                    // alert(`Folder selection error: ${error.message}`); // Alert might be annoying if main process threw
+                }
+            });
+             console.log("Renderer: Browse button listener attached.");
+        } else {
+             console.error("Renderer: Browse button ('selectFolderBtn') listener NOT attached - element not found!");
+        }
+
+
+        // Process Button Listener
+        if (processBtn) {
+           processBtn.addEventListener('click', async () => {
+                if (selectedFolders.length === 0) { alert('Please select input folder(s).'); return; } const apiInstances = parseInt(apiInstancesSlider.value); if (apiInstances > 3) { const confirmed = confirm(`Requesting ${apiInstances} Docker instances?\nMonitor system resources.\nContinue?`); if (!confirmed) return; }
+                isProcessing = true; isPaused = false; processBtn.disabled = true; selectFolderBtn.disabled = true; apiInstancesSlider.disabled = true; progressContainer.style.display = 'block'; progressBar.style.width = '0%'; progressText.textContent = 'Initializing...'; overallProgressLabel.textContent = `Pre-scanning folders...`; pauseResumeBtn.textContent = 'Pause'; pauseResumeBtn.disabled = false; cancelBtn.disabled = false; document.querySelector('.instances-progress').innerHTML = ''; logElement.innerHTML = 'Starting processing job...<br>'; addLog(`Requesting ${apiInstances} API instance(s).`);
+                try { const result = await ipcRenderer.invoke('process-images', { folders: selectedFolders, apiEndpoint: apiEndpointInput.value, confidenceThreshold: parseFloat(confidenceThresholdInput.value), processMode: getProcessMode(), includeSubfolders: includeSubfoldersCheckbox.checked, apiInstances: apiInstances }); if (result.canceled) { addLog(`Processing Canceled!`, 'warning'); progressText.textContent = `Canceled`; } else { addLog(`Processing Completed!`, 'success'); progressText.textContent = `Completed`; } addLog(`--- Final Summary ---`); addLog(`Folders: ${result.folderCount}`); addLog(`Target images: ${result.total}`); addLog(`Attempted: ${result.processed}`); addLog(`Successful: ${result.success}`, 'success'); addLog(`Failed: ${result.failed}`, result.failed > 0 ? 'error' : 'info'); addLog(`Skipped: ${result.skipped}`, result.skipped > 0 ? 'warning' : 'info'); addLog(`API instances used: ${result.instancesUsed}`); }
+                catch (error) { addLog(`FATAL PROCESSING ERROR: ${error.message}`, 'error'); progressText.textContent = `Error!`; alert(`Critical error:\n\n${error.message}\n\nCheck logs.`); isProcessing = false; } // Ensure state reset on error
+                finally { isProcessing = false; isPaused = false; processBtn.disabled = false; selectFolderBtn.disabled = false; apiInstancesSlider.disabled = false; pauseResumeBtn.disabled = true; cancelBtn.disabled = true; }
+           });
+            console.log("Renderer: Process button listener attached.");
+        } else {
+             console.error("Renderer: Process button ('processBtn') listener NOT attached - element not found!");
+        }
+
+        // Pause/Resume/Cancel Button Listeners
+        if (pauseResumeBtn) pauseResumeBtn.addEventListener('click', togglePause);
+        if (cancelBtn) cancelBtn.addEventListener('click', cancelProcessing);
+
+
+        // --- IPC Event Handlers from Main Process ---
+        if(ipcRenderer) {
+            ipcRenderer.on('pause-state-changed', (event, paused) => { if (isProcessing) { isPaused = paused; pauseResumeBtn.textContent = isPaused ? 'Resume' : 'Pause'; addLog(`Main state: ${isPaused ? 'PAUSED' : 'RESUMED'}`, 'info'); } });
+            ipcRenderer.on('processing-canceled', () => { if (isProcessing) { addLog('Cancel confirmed.', 'warning'); isProcessing = false; processBtn.disabled = false; selectFolderBtn.disabled = false; apiInstancesSlider.disabled = false; pauseResumeBtn.disabled = true; cancelBtn.disabled = true; progressText.textContent = `Canceled`; } });
+            ipcRenderer.on('log', (event, message, type = '') => { addLog(message, type); });
+            ipcRenderer.on('progress-instance', (event, data) => { if (!isProcessing) return; const percent = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0; const instancesContainer = document.querySelector('.instances-progress'); if (!instancesContainer) return; let instanceEl = document.getElementById(`instance-progress-${data.instance}`); if (!instanceEl) { instanceEl = document.createElement('div'); instanceEl.id = `instance-progress-${data.instance}`; instanceEl.className = 'instance-progress'; instancesContainer.appendChild(instanceEl); } instanceEl.textContent = `Instance #${data.instance + 1}: ${percent}% (${data.current}/${data.total}) ${data.file ? '- ' + path.basename(data.file) : ''}`; instanceEl.classList.add('active'); setTimeout(() => { if (instanceEl) instanceEl.classList.remove('active'); }, 500); });
+            ipcRenderer.on('progress-overall', (event, data) => { if (!isProcessing) return; if (overallProgressLabel) { const folderName = data.folder ? path.basename(data.folder) : '...'; overallProgressLabel.textContent = `Processing: Folder ${data.currentFolderIndex} of ${data.totalFolders} (${folderName})`; } });
+            ipcRenderer.on('progress-global-images', (event, data) => { if (!isProcessing) return; const overallPercent = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0; progressBar.style.width = `${overallPercent}%`; progressText.textContent = `${overallPercent}% Overall (${data.current}/${data.total} images)`; });
+            ipcRenderer.on('force-update', () => { const currentOpacity = document.body.style.opacity; document.body.style.opacity = '0.999'; requestAnimationFrame(() => { document.body.style.opacity = currentOpacity || '1'; }); });
+             console.log("Renderer: IPC listeners attached.");
+        } else {
+             console.error("Renderer: ipcRenderer not available, cannot attach IPC listeners.");
+        }
+
+        addLog("Renderer initialization complete.", "info");
+
+    }); // End DOMContentLoaded listener
   </script>
 </body>
 </html>
