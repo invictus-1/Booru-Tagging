@@ -7,6 +7,12 @@ This project provides a complete package for automatically tagging images in [Ea
 if the image is named earth.png the json is named earth.json. That way with the Eagle plugin it will just find the correct json for the correct image using the json file names. You can download the
 Eagle Plugin from the repo. It would be on Eagle's community plugins but they still haven't reviewed it.
 
+If you have a massive stash of images I highly recommend using my eagletagger.py and iamgerenamer.py I have attached to the main repo. KEEP IN MIND IMAGER RENAMER WILL RENAME ALL IMAGES TO A 10 DIGIT NUMBER for example 1001371780.jpg. IT CANNOT BE REVERSED. So make sure the folders where you have the images stored don't contain stuff you don't want renamed. The purpose of this is to ensure 100% of all images get tagged and added to eagle. Obviously if the image is corrupted it cannot work/get tagged. Outside of that I made this as many images can have dupes, weird characters in the title etc and it would either not get tagged in eagle and or just go stupid. The image renamer will ensure that no 2 images have the exact same name so no dupes or errors can occur. The Eagletagger.py file is used to add all the tags to eagle at an extremely fast rate. I'm talking thousands per second. The initial processing takes a bit depending on your pc but after that it adds extremely fast. 
+
+To run these files just type python eagletagger.py into cmd and it will work that's it. Make sure you're in the directory of the file as well.
+
+Lastly I recommend just using process all files for eagletagger as it guarantees everything gets tagged but it just takes a little longer. The other options work but sometimes they can miss a file.
+
 ## Requirements
 
 - Running instance of [Danbooru Autotagger API](https://github.com/danbooru/autotagger) (at http://localhost:5000) For it to work properly.
