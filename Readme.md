@@ -38,7 +38,7 @@ Eagle Plugin from the repo. It would be on Eagle's community plugins but they st
    - Choose whether to include subfolders for processing
 
 3. **Processing Options**:
-   - **API Instances**: Select up to 3 concurrent API instances for faster processing (requires more system memory)
+   - **API Instances**: Select up to 10 concurrent API instances for faster processing (requires more system memory)
    - **Processing Mode**:
      - Process all images
      - Process only new images (skip previously processed)
