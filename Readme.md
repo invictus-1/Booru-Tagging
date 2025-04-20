@@ -99,7 +99,7 @@ For very large libraries (>50k images) or libraries with filename issues (duplic
 
 > **⚠️ EXTREME WARNING:** Using `imagerenamer.py` is **DESTRUCTIVE AND IRREVERSIBLE**. It will permanently rename **ALL** image files (based on common extensions) in the target folders and their subfolders.
 >
-> *   **DO NOT** run this on folders containing non-image files you care about or images whose original filenames you need to preserve.
+> *   **DO NOT** run this on folders containing image files you care about or images whose original filenames you need to preserve.
 > *   **BACK UP YOUR FOLDERS** before running this script.
 > *   Use this *only* if you understand the consequences and need to ensure unique filenames for processing.
 
