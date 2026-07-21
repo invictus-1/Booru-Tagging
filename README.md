@@ -1,3 +1,5 @@
+<img width="823" height="587" alt="Screenshot_1" src="https://github.com/user-attachments/assets/7010570e-bdc6-4640-ad86-ba71c9e7bee0" />
+
 # Booru Tagger V3
 
 Ground-up rebuild of the Booru Processor. No Docker. One app, one integrated
