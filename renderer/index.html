@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <title>Booru Tagger</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+
+    <!-- ============ Header ============ -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">BT</div>
+        <div>
+          <div class="brand-name">Booru Tagger</div>
+          <div class="brand-sub">v3 · integrated GPU inference</div>
+        </div>
+      </div>
+      <div class="worker-pill" id="workerPill">
+        <span class="dot" id="workerDot"></span>
+        <span id="workerLabel">worker offline</span>
+      </div>
+    </header>
+
+    <!-- ============ Setup overlay (first run) ============ -->
+    <div class="overlay hidden" id="setupOverlay">
+      <div class="overlay-card">
+        <h2>First-time setup</h2>
+        <p id="setupMessage">Preparing the inference environment...</p>
+        <div class="spinner"></div>
+        <pre class="setup-log" id="setupLog"></pre>
+      </div>
+    </div>
+
+    <main class="layout">
+
+      <!-- ============ Left column: configuration ============ -->
+      <section class="col col-config">
+
+        <div class="card">
+          <div class="card-title">Folders</div>
+          <div class="empty-hint" id="folderEmpty">No folders yet — add the ones containing your images.</div>
+          <div class="folder-list" id="folderList"></div>
+          <div class="row gap">
+            <button class="btn" id="addFoldersBtn">+ Add folders</button>
+            <label class="check">
+              <input type="checkbox" id="includeSubfolders" checked />
+              <span>Include subfolders</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Model</div>
+          <div class="model-grid" id="modelGrid">
+            <button class="model-opt" data-model="both">
+              <span class="model-name">Merged</span>
+              <span class="model-desc">PixAI + WD — best overall</span>
+            </button>
+            <button class="model-opt" data-model="pixai">
+              <span class="model-name">PixAI v0.9</span>
+              <span class="model-desc">Newest characters &amp; IPs</span>
+            </button>
+            <button class="model-opt" data-model="wd-eva02">
+              <span class="model-name">WD EVA02</span>
+              <span class="model-desc">Precise, has ratings</span>
+            </button>
+            <button class="model-opt" data-model="animetimm">
+              <span class="model-name">AnimeTimm</span>
+              <span class="model-desc">2025 data · needs HF token</span>
+            </button>
+          </div>
+
+          <div class="field top-space">
+            <label for="hfToken">Hugging Face token <span class="mini">— only for gated models (AnimeTimm)</span></label>
+            <input type="password" id="hfToken" class="text-input" placeholder="hf_..." autocomplete="off" spellcheck="false" />
+          </div>
+
+          <div class="row split top-space">
+            <div class="field">
+              <label for="threshold">Min confidence</label>
+              <div class="range-wrap">
+                <input type="range" id="threshold" min="0.05" max="0.95" step="0.05" value="0.1" />
+                <span class="range-val" id="thresholdVal">0.10</span>
+              </div>
+            </div>
+            <div class="field">
+              <label for="parallel">Parallel workers</label>
+              <div class="range-wrap">
+                <input type="range" id="parallel" min="1" max="8" step="1" value="4" />
+                <span class="range-val" id="parallelVal">4</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Which images</div>
+          <div class="seg" id="modeSeg">
+            <button class="seg-opt active" data-mode="all">All</button>
+            <button class="seg-opt" data-mode="new">New only</button>
+            <button class="seg-opt" data-mode="missing">Missing JSON</button>
+            <button class="seg-opt" data-mode="update">Update tagged</button>
+          </div>
+          <p class="hint" id="modeHint">Tag every image, re-tagging ones done before.</p>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary btn-big" id="startBtn" disabled>Start tagging</button>
+          <button class="btn" id="pauseBtn" disabled>Pause</button>
+          <button class="btn btn-danger" id="cancelBtn" disabled>Cancel</button>
+        </div>
+      </section>
+
+      <!-- ============ Right column: progress & activity ============ -->
+      <section class="col col-status">
+
+        <div class="card progress-card">
+          <div class="progress-head">
+            <div>
+              <div class="phase" id="phaseLabel">Idle</div>
+              <div class="folder-now" id="folderNow"></div>
+            </div>
+            <div class="big-count"><span id="doneCount">0</span><span class="of"> / </span><span id="totalCount">0</span></div>
+          </div>
+          <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+          <div class="stats">
+            <div class="stat"><span class="stat-num ok" id="statSuccess">0</span><span class="stat-label">tagged</span></div>
+            <div class="stat"><span class="stat-num bad" id="statFailed">0</span><span class="stat-label">failed</span></div>
+            <div class="stat"><span class="stat-num warn" id="statSkipped">0</span><span class="stat-label">skipped</span></div>
+            <div class="stat"><span class="stat-num" id="statRate">–</span><span class="stat-label">img/s</span></div>
+            <div class="stat"><span class="stat-num" id="statEta">–</span><span class="stat-label">eta</span></div>
+          </div>
+        </div>
+
+        <div class="card grow">
+          <div class="card-title row between">
+            <span>Live activity</span>
+            <span class="mini" id="activityHint"></span>
+          </div>
+          <div class="activity" id="activityFeed"></div>
+        </div>
+
+        <div class="card log-card">
+          <div class="card-title row between">
+            <span>Log</span>
+            <label class="check mini"><input type="checkbox" id="autoScroll" checked /><span>auto-scroll</span></label>
+          </div>
+          <div class="log" id="logView"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

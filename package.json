@@ -1,0 +1,35 @@
+{
+  "name": "booru-tagger-v3",
+  "version": "3.0.0",
+  "description": "Booru image tagger with integrated GPU inference — no Docker required",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "build": {
+    "appId": "com.booru.tagger",
+    "productName": "Booru Tagger",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**",
+      "renderer/**",
+      "assets/**"
+    ],
+    "extraResources": [
+      { "from": "worker", "to": "worker" }
+    ],
+    "directories": {
+      "output": "dist"
+    }
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.0"
+  }
+}
