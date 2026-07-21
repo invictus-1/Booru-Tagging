@@ -105,3 +105,4 @@ lib/scanner.js        Folder scan, modes, processed_log (V2-compatible)
 worker/worker.py      Inference worker + MODELS registry
 renderer/             UI (vanilla HTML/CSS/JS, dark theme)
 ```
+Eagle Toolkit — companion app for Booru Tagger. Two tools in one: a bulk Renamer that gives images unique 10-digit filenames (safe, collision-proof, with full rename history) so they work as stable IDs, and a Tag Merger that writes your generated booru tags directly into your Eagle library's metadata — with a confidence filter to keep junk tags out. No setup: no Python, no Docker, no database.
