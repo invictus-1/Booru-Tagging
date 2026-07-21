@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <title>Eagle Toolkit</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">ET</div>
+        <div>
+          <div class="brand-name">Eagle Toolkit</div>
+          <div class="brand-sub">renamer · tag merger</div>
+        </div>
+      </div>
+      <nav class="tabs">
+        <button class="tab active" data-tab="rename">Renamer</button>
+        <button class="tab" data-tab="merge">Tag Merger</button>
+      </nav>
+    </header>
+
+    <main class="layout">
+
+      <!-- ============ Left column: per-tool config ============ -->
+      <section class="col col-config">
+
+        <!-- ---- Renamer tab ---- -->
+        <div class="tab-panel" id="panel-rename">
+          <div class="card">
+            <div class="card-title">Image folders</div>
+            <div class="empty-hint" id="renameFoldersEmpty">Add the folders whose images should get unique 10-digit names.</div>
+            <div class="folder-list" id="renameFolders"></div>
+            <div class="row gap">
+              <button class="btn" data-add="renameFolders">+ Add folders</button>
+              <label class="check">
+                <input type="checkbox" id="renameSubfolders" checked />
+                <span>Include subfolders</span>
+              </label>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">How it works</div>
+            <p class="hint">Every image gets a random, globally unique 10-digit name (extension kept).
+            Files already named that way are skipped, as are files renamed in a previous run.
+            Non-images are ignored. A history log keeps every old&nbsp;→&nbsp;new mapping.</p>
+            <p class="hint warn-hint">Rename <b>before</b> tagging — renaming afterwards orphans the tag JSONs.</p>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary btn-big" id="renameStartBtn" disabled>Start renaming</button>
+          </div>
+        </div>
+
+        <!-- ---- Merger tab ---- -->
+        <div class="tab-panel hidden" id="panel-merge">
+          <div class="card">
+            <div class="card-title">Tag JSON folders</div>
+            <div class="empty-hint" id="tagFoldersEmpty">The folders containing your tagger's Json output.</div>
+            <div class="folder-list" id="tagFolders"></div>
+            <button class="btn" data-add="tagFolders">+ Add folders</button>
+          </div>
+          <div class="card">
+            <div class="card-title">Eagle library folders</div>
+            <div class="empty-hint" id="metaFoldersEmpty">Your Eagle library's images folder (contains the .info item folders).</div>
+            <div class="folder-list" id="metaFolders"></div>
+            <button class="btn" data-add="metaFolders">+ Add folders</button>
+          </div>
+          <div class="card">
+            <div class="card-title">Options</div>
+            <div class="seg" id="mergeModeSeg">
+              <button class="seg-opt active" data-mode="all">All items</button>
+              <button class="seg-opt" data-mode="new">New only</button>
+            </div>
+            <p class="hint" id="mergeModeHint">Process every Eagle item, even ones merged before.</p>
+            <div class="field top-space">
+              <label for="mergeThreshold">Min tag confidence <span class="mini">— 0 keeps every tag (old behavior)</span></label>
+              <div class="range-wrap">
+                <input type="range" id="mergeThreshold" min="0" max="0.9" step="0.05" value="0.35" />
+                <span class="range-val" id="mergeThresholdVal">0.35</span>
+              </div>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary btn-big" id="mergeStartBtn" disabled>Merge tags</button>
+          </div>
+        </div>
+
+        <div class="actions shared-actions">
+          <button class="btn" id="pauseBtn" disabled>Pause</button>
+          <button class="btn btn-danger" id="cancelBtn" disabled>Cancel</button>
+        </div>
+      </section>
+
+      <!-- ============ Right column: progress & log ============ -->
+      <section class="col col-status">
+        <div class="card progress-card">
+          <div class="progress-head">
+            <div class="phase" id="phaseLabel">Idle</div>
+            <div class="big-count"><span id="doneCount">0</span><span class="of"> / </span><span id="totalCount">0</span></div>
+          </div>
+          <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+          <div class="stats" id="statsRow"></div>
+        </div>
+
+        <div class="card log-card grow">
+          <div class="card-title row between">
+            <span>Log</span>
+            <label class="check mini"><input type="checkbox" id="autoScroll" checked /><span>auto-scroll</span></label>
+          </div>
+          <div class="log" id="logView"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
