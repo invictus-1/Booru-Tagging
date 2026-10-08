@@ -3,157 +3,395 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
-  <title>Booru Tagger</title>
-  <link rel="stylesheet" href="style.css" />
+  <title>Booru Suite</title>
+  <link rel="stylesheet" href="shell.css" />
+  <link rel="stylesheet" href="tagger.css" />
+  <link rel="stylesheet" href="toolkit.css" />
 </head>
 <body>
   <div class="app">
 
-    <!-- ============ Header ============ -->
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark">BT</div>
+    <header class="suite-bar">
+      <div class="suite-brand">
+        <div class="suite-mark">BS</div>
         <div>
-          <div class="brand-name">Booru Tagger</div>
-          <div class="brand-sub">v3 · integrated GPU inference</div>
+          <div class="suite-name">Booru Suite</div>
+          <div class="suite-sub">tag · rename · merge · sync</div>
         </div>
       </div>
-      <div class="worker-pill" id="workerPill">
+      <nav class="suite-tabs" id="suiteTabs">
+        <button class="suite-tab active" data-view="tagger"><span class="busy-dot"></span>Tagger</button>
+        <button class="suite-tab" data-view="rename"><span class="busy-dot"></span>Renamer</button>
+        <button class="suite-tab" data-view="merge"><span class="busy-dot"></span>Tag Merger</button>
+        <button class="suite-tab" data-view="sync"><span class="busy-dot"></span>Eagle Sync</button>
+      </nav>
+      <div class="worker-pill" id="workerPill" title="Tagger inference worker">
         <span class="dot" id="workerDot"></span>
         <span id="workerLabel">worker offline</span>
       </div>
     </header>
 
-    <!-- ============ Setup overlay (first run) ============ -->
-    <div class="overlay hidden" id="setupOverlay">
-      <div class="overlay-card">
-        <h2>First-time setup</h2>
-        <p id="setupMessage">Preparing the inference environment...</p>
-        <div class="spinner"></div>
-        <pre class="setup-log" id="setupLog"></pre>
+    <!-- =================== Tagger =================== -->
+    <div class="view" id="view-tagger">
+      <!-- ============ Setup overlay (first run) ============ -->
+      <div class="overlay hidden" id="setupOverlay">
+        <div class="overlay-card">
+          <h2>First-time setup</h2>
+          <p id="setupMessage">Preparing the inference environment...</p>
+          <div class="spinner"></div>
+          <pre class="setup-log" id="setupLog"></pre>
+        </div>
       </div>
+
+      <main class="layout">
+
+        <!-- ============ Left column: configuration ============ -->
+        <section class="col col-config">
+
+          <div class="card">
+            <div class="card-title">Folders</div>
+            <div class="empty-hint" id="folderEmpty">No folders yet — add the ones containing your images.</div>
+            <div class="folder-list" id="folderList"></div>
+            <div class="row gap">
+              <button class="btn" id="addFoldersBtn">+ Add folders</button>
+              <label class="check">
+                <input type="checkbox" id="includeSubfolders" checked />
+                <span>Include subfolders</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Model</div>
+            <div class="model-grid" id="modelGrid">
+              <button class="model-opt" data-model="both">
+                <span class="model-name">Merged</span>
+                <span class="model-desc">PixAI + WD — best overall</span>
+              </button>
+              <button class="model-opt" data-model="pixai">
+                <span class="model-name">PixAI v0.9</span>
+                <span class="model-desc">Newest characters &amp; IPs</span>
+              </button>
+              <button class="model-opt" data-model="wd-eva02">
+                <span class="model-name">WD EVA02</span>
+                <span class="model-desc">Precise, has ratings</span>
+              </button>
+              <button class="model-opt" data-model="animetimm">
+                <span class="model-name">AnimeTimm</span>
+                <span class="model-desc">2025 data · needs HF token</span>
+              </button>
+            </div>
+
+            <div class="field top-space">
+              <label for="hfToken">Hugging Face token <span class="mini">— only for gated models (AnimeTimm)</span></label>
+              <input type="password" id="hfToken" class="text-input" placeholder="hf_..." autocomplete="off" spellcheck="false" />
+            </div>
+
+            <div class="row split top-space">
+              <div class="field">
+                <label for="threshold">Min confidence</label>
+                <div class="range-wrap">
+                  <input type="range" id="threshold" min="0.05" max="0.95" step="0.05" value="0.1" />
+                  <span class="range-val" id="thresholdVal">0.10</span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="parallel">Parallel workers</label>
+                <div class="range-wrap">
+                  <input type="range" id="parallel" min="1" max="8" step="1" value="4" />
+                  <span class="range-val" id="parallelVal">4</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Which images</div>
+            <div class="seg" id="modeSeg">
+              <button class="seg-opt active" data-mode="all">All</button>
+              <button class="seg-opt" data-mode="new">New only</button>
+              <button class="seg-opt" data-mode="missing">Missing JSON</button>
+              <button class="seg-opt" data-mode="update">Update tagged</button>
+            </div>
+            <p class="hint" id="modeHint">Tag every image, re-tagging ones done before.</p>
+          </div>
+
+          <div class="actions">
+            <button class="btn btn-primary btn-big" id="startBtn" disabled>Start tagging</button>
+            <button class="btn" id="pauseBtn" disabled>Pause</button>
+            <button class="btn btn-danger" id="cancelBtn" disabled>Cancel</button>
+          </div>
+        </section>
+
+        <!-- ============ Right column: progress & activity ============ -->
+        <section class="col col-status">
+
+          <div class="card progress-card">
+            <div class="progress-head">
+              <div>
+                <div class="phase" id="phaseLabel">Idle</div>
+                <div class="folder-now" id="folderNow"></div>
+              </div>
+              <div class="big-count"><span id="doneCount">0</span><span class="of"> / </span><span id="totalCount">0</span></div>
+            </div>
+            <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+            <div class="stats">
+              <div class="stat"><span class="stat-num ok" id="statSuccess">0</span><span class="stat-label">tagged</span></div>
+              <div class="stat"><span class="stat-num bad" id="statFailed">0</span><span class="stat-label">failed</span></div>
+              <div class="stat"><span class="stat-num warn" id="statSkipped">0</span><span class="stat-label">skipped</span></div>
+              <div class="stat"><span class="stat-num" id="statRate">–</span><span class="stat-label">img/s</span></div>
+              <div class="stat"><span class="stat-num" id="statEta">–</span><span class="stat-label">eta</span></div>
+            </div>
+          </div>
+
+          <div class="card grow">
+            <div class="card-title row between">
+              <span>Live activity</span>
+              <span class="mini" id="activityHint"></span>
+            </div>
+            <div class="activity" id="activityFeed"></div>
+          </div>
+
+          <div class="card log-card">
+            <div class="card-title row between">
+              <span>Log</span>
+              <label class="check mini"><input type="checkbox" id="autoScroll" checked /><span>auto-scroll</span></label>
+            </div>
+            <div class="log" id="logView"></div>
+          </div>
+        </section>
+      </main>
     </div>
 
-    <main class="layout">
+    <!-- =========== Renamer / Tag Merger / Eagle Sync =========== -->
+    <div class="view hidden" id="view-toolkit">
+      <main class="layout">
 
-      <!-- ============ Left column: configuration ============ -->
-      <section class="col col-config">
+        <!-- ============ Left column: per-tool config ============ -->
+        <section class="col col-config">
 
-        <div class="card">
-          <div class="card-title">Folders</div>
-          <div class="empty-hint" id="folderEmpty">No folders yet — add the ones containing your images.</div>
-          <div class="folder-list" id="folderList"></div>
-          <div class="row gap">
-            <button class="btn" id="addFoldersBtn">+ Add folders</button>
-            <label class="check">
-              <input type="checkbox" id="includeSubfolders" checked />
-              <span>Include subfolders</span>
-            </label>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-title">Model</div>
-          <div class="model-grid" id="modelGrid">
-            <button class="model-opt" data-model="both">
-              <span class="model-name">Merged</span>
-              <span class="model-desc">PixAI + WD — best overall</span>
-            </button>
-            <button class="model-opt" data-model="pixai">
-              <span class="model-name">PixAI v0.9</span>
-              <span class="model-desc">Newest characters &amp; IPs</span>
-            </button>
-            <button class="model-opt" data-model="wd-eva02">
-              <span class="model-name">WD EVA02</span>
-              <span class="model-desc">Precise, has ratings</span>
-            </button>
-            <button class="model-opt" data-model="animetimm">
-              <span class="model-name">AnimeTimm</span>
-              <span class="model-desc">2025 data · needs HF token</span>
-            </button>
-          </div>
-
-          <div class="field top-space">
-            <label for="hfToken">Hugging Face token <span class="mini">— only for gated models (AnimeTimm)</span></label>
-            <input type="password" id="hfToken" class="text-input" placeholder="hf_..." autocomplete="off" spellcheck="false" />
-          </div>
-
-          <div class="row split top-space">
-            <div class="field">
-              <label for="threshold">Min confidence</label>
-              <div class="range-wrap">
-                <input type="range" id="threshold" min="0.05" max="0.95" step="0.05" value="0.1" />
-                <span class="range-val" id="thresholdVal">0.10</span>
+          <!-- ---- Renamer tab ---- -->
+          <div class="tab-panel" id="panel-rename">
+            <div class="card">
+              <div class="card-title">Image folders</div>
+              <div class="empty-hint" id="renameFoldersEmpty">Add the folders whose images should get unique 10-digit names.</div>
+              <div class="folder-list" id="renameFolders"></div>
+              <div class="row gap">
+                <button class="btn" data-add="renameFolders">+ Add folders</button>
+                <label class="check">
+                  <input type="checkbox" id="renameSubfolders" checked />
+                  <span>Include subfolders</span>
+                </label>
               </div>
             </div>
-            <div class="field">
-              <label for="parallel">Parallel workers</label>
-              <div class="range-wrap">
-                <input type="range" id="parallel" min="1" max="8" step="1" value="4" />
-                <span class="range-val" id="parallelVal">4</span>
-              </div>
+            <div class="card">
+              <div class="card-title">How it works</div>
+              <p class="hint">Every image gets a random, globally unique 10-digit name (extension kept).
+              Files already named that way are skipped, as are files renamed in a previous run.
+              Non-images are ignored. A history log keeps every old&nbsp;→&nbsp;new mapping.</p>
+              <p class="hint warn-hint">Rename <b>before</b> tagging — renaming afterwards orphans the tag JSONs.</p>
+            </div>
+            <div class="actions">
+              <button class="btn btn-primary btn-big" id="renameStartBtn" disabled>Start renaming</button>
             </div>
           </div>
-        </div>
 
-        <div class="card">
-          <div class="card-title">Which images</div>
-          <div class="seg" id="modeSeg">
-            <button class="seg-opt active" data-mode="all">All</button>
-            <button class="seg-opt" data-mode="new">New only</button>
-            <button class="seg-opt" data-mode="missing">Missing JSON</button>
-            <button class="seg-opt" data-mode="update">Update tagged</button>
+          <!-- ---- Merger tab ---- -->
+          <div class="tab-panel hidden" id="panel-merge">
+            <div class="card">
+              <div class="card-title">Tag JSON folders</div>
+              <div class="empty-hint" id="tagFoldersEmpty">The folders containing your tagger's Json output.</div>
+              <div class="folder-list" id="tagFolders"></div>
+              <button class="btn" data-add="tagFolders">+ Add folders</button>
+            </div>
+            <div class="card">
+              <div class="card-title">Eagle library folders</div>
+              <div class="empty-hint" id="metaFoldersEmpty">Your Eagle library's images folder (contains the .info item folders).</div>
+              <div class="folder-list" id="metaFolders"></div>
+              <button class="btn" data-add="metaFolders">+ Add folders</button>
+            </div>
+            <div class="card">
+              <div class="card-title">Options</div>
+              <div class="seg" id="mergeModeSeg">
+                <button class="seg-opt active" data-mode="all">All items</button>
+                <button class="seg-opt" data-mode="new">New only</button>
+              </div>
+              <p class="hint" id="mergeModeHint">Process every Eagle item, even ones merged before.</p>
+              <p class="hint warn-hint">Close Eagle before merging (it caches metadata in memory), or re-sync the library afterwards.</p>
+              <div class="field top-space">
+                <label for="mergeThreshold">Min tag confidence <span class="mini">— 0 keeps every tag (old behavior)</span></label>
+                <div class="range-wrap">
+                  <input type="range" id="mergeThreshold" min="0" max="0.9" step="0.05" value="0.35" />
+                  <span class="range-val" id="mergeThresholdVal">0.35</span>
+                </div>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-primary btn-big" id="mergeStartBtn" disabled>Merge tags</button>
+            </div>
           </div>
-          <p class="hint" id="modeHint">Tag every image, re-tagging ones done before.</p>
-        </div>
 
-        <div class="actions">
-          <button class="btn btn-primary btn-big" id="startBtn" disabled>Start tagging</button>
-          <button class="btn" id="pauseBtn" disabled>Pause</button>
-          <button class="btn btn-danger" id="cancelBtn" disabled>Cancel</button>
-        </div>
-      </section>
 
-      <!-- ============ Right column: progress & activity ============ -->
-      <section class="col col-status">
+          <!-- ---- Sync tab ---- -->
+          <div class="tab-panel hidden" id="panel-sync">
+            <div class="card">
+              <div class="card-title row between">
+                <span>Eagle</span>
+                <button class="btn btn-small" id="syncRefreshBtn">Check</button>
+              </div>
+              <div class="eagle-status" id="eagleStatus">
+                <span class="dot" id="eagleDot"></span>
+                <span id="eagleStatusText">Not checked yet.</span>
+              </div>
+              <details class="advanced">
+                <summary>Advanced</summary>
+                <div class="field top-space">
+                  <label for="syncApiBase">API address</label>
+                  <input type="text" id="syncApiBase" placeholder="http://127.0.0.1:41595" spellcheck="false" />
+                </div>
+                <div class="field top-space">
+                  <label for="syncToken">API token <span class="mini">— only for a remote Eagle; leave blank locally</span></label>
+                  <input type="text" id="syncToken" placeholder="(none)" spellcheck="false" />
+                </div>
+                <div class="field top-space">
+                  <label>Library path <span class="mini">— only needed for Eagle older than 4.0 Build 21</span></label>
+                  <div class="row gap">
+                    <input type="text" id="syncLibraryPath" placeholder="(auto from Eagle)" spellcheck="false" />
+                    <button class="btn btn-small" id="syncLibraryPick">…</button>
+                  </div>
+                </div>
+              </details>
+            </div>
 
-        <div class="card progress-card">
-          <div class="progress-head">
-            <div>
+            <div class="card">
+              <div class="card-title">PC folders</div>
+              <div class="empty-hint" id="syncSourcesEmpty">The folders to mirror into Eagle. Json/ folders and the Eagle library itself are skipped automatically.</div>
+              <div class="folder-list" id="syncSources"></div>
+              <button class="btn" data-add="syncSources">+ Add folders</button>
+              <div class="seg top-space" id="syncMappingSeg">
+                <button class="seg-opt active" data-mapping="self">Folder = Eagle folder</button>
+                <button class="seg-opt" data-mapping="children">Folders inside = Eagle folders</button>
+              </div>
+              <p class="hint" id="syncMappingHint"></p>
+            </div>
+
+            <div class="card">
+              <div class="card-title">What to sync</div>
+              <div class="row gap wrap">
+                <label class="check"><input type="checkbox" id="syncTypeImages" checked /><span>Images</span></label>
+                <label class="check"><input type="checkbox" id="syncTypeGifs" checked /><span>GIFs</span></label>
+                <label class="check"><input type="checkbox" id="syncTypeVideos" checked /><span>Videos (webm, mp4…)</span></label>
+              </div>
+              <div class="field top-space">
+                <label for="syncExtraExts">Extra extensions <span class="mini">— comma-separated, e.g. psd, clip</span></label>
+                <input type="text" id="syncExtraExts" placeholder="" spellcheck="false" />
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Duplicate check</div>
+              <div class="seg" id="syncMatchSeg">
+                <button class="seg-opt active" data-match="full">Full hash</button>
+                <button class="seg-opt" data-match="quick">Fast fingerprint</button>
+              </div>
+              <p class="hint" id="syncMatchHint"></p>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Safety copy</div>
+              <label class="check block"><input type="checkbox" id="syncSafetyCopy" checked /><span>Copy new files to a dated backup folder first, and import from the copy — Eagle never touches the originals</span></label>
+              <div class="field" id="syncBackupField">
+                <label>Backup folder <span class="mini">— needs free space for one copy of the new files</span></label>
+                <div class="row gap">
+                  <input type="text" id="syncBackupDir" placeholder="(auto: “Eagle Sync Backup” next to your first PC folder)" spellcheck="false" />
+                  <button class="btn btn-small" id="syncBackupPick">…</button>
+                </div>
+              </div>
+              <p class="hint">After importing, every file is checked byte-for-byte inside Eagle. If all match, the log says so and the backup can be deleted; each run's folder has a manifest.csv.</p>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Options</div>
+              <label class="check block"><input type="checkbox" id="syncFileExisting" checked /><span>If a file is already in Eagle under another folder, add it to the matching folder too (no copy)</span></label>
+              <label class="check block"><input type="checkbox" id="syncRestoreDeleted" /><span>Re-import files I've deleted from Eagle</span></label>
+              <label class="check block"><input type="checkbox" id="syncAttachTags" checked /><span>Attach booru tags from the tagger's Json files on import</span></label>
+              <div class="field top-space" id="syncThresholdField">
+                <label for="syncThreshold">Min tag confidence</label>
+                <div class="range-wrap">
+                  <input type="range" id="syncThreshold" min="0" max="0.9" step="0.05" value="0.35" />
+                  <span class="range-val" id="syncThresholdVal">0.35</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button class="btn btn-big" id="syncScanBtn" disabled>Scan &amp; preview</button>
+              <button class="btn btn-primary btn-big" id="syncImportBtn" disabled>Import</button>
+            </div>
+            <div class="actions">
+              <button class="link-btn undo-link" id="syncVerifyBtn">Verify last sync</button>
+              <button class="link-btn undo-link tight" id="syncUndoBtn">Undo last sync…</button>
+            </div>
+          </div>
+
+          <div class="actions shared-actions">
+            <button class="btn" id="pauseBtn" disabled>Pause</button>
+            <button class="btn btn-danger" id="cancelBtn" disabled>Cancel</button>
+          </div>
+        </section>
+
+        <!-- ============ Right column: progress & log ============ -->
+        <section class="col col-status">
+          <div class="card progress-card">
+            <div class="progress-head">
               <div class="phase" id="phaseLabel">Idle</div>
-              <div class="folder-now" id="folderNow"></div>
+              <div class="big-count"><span id="doneCount">0</span><span class="of"> / </span><span id="totalCount">0</span></div>
             </div>
-            <div class="big-count"><span id="doneCount">0</span><span class="of"> / </span><span id="totalCount">0</span></div>
+            <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+            <div class="stats" id="statsRow"></div>
           </div>
-          <div class="bar"><div class="bar-fill" id="barFill"></div></div>
-          <div class="stats">
-            <div class="stat"><span class="stat-num ok" id="statSuccess">0</span><span class="stat-label">tagged</span></div>
-            <div class="stat"><span class="stat-num bad" id="statFailed">0</span><span class="stat-label">failed</span></div>
-            <div class="stat"><span class="stat-num warn" id="statSkipped">0</span><span class="stat-label">skipped</span></div>
-            <div class="stat"><span class="stat-num" id="statRate">–</span><span class="stat-label">img/s</span></div>
-            <div class="stat"><span class="stat-num" id="statEta">–</span><span class="stat-label">eta</span></div>
-          </div>
-        </div>
 
-        <div class="card grow">
-          <div class="card-title row between">
-            <span>Live activity</span>
-            <span class="mini" id="activityHint"></span>
-          </div>
-          <div class="activity" id="activityFeed"></div>
-        </div>
 
-        <div class="card log-card">
-          <div class="card-title row between">
-            <span>Log</span>
-            <label class="check mini"><input type="checkbox" id="autoScroll" checked /><span>auto-scroll</span></label>
+          <div class="card plan-card hidden" id="planCard">
+            <div class="card-title row between">
+              <span>Sync plan</span>
+              <span class="row gap">
+                <button class="link-btn" id="planSelectAll">select all</button>
+                <button class="link-btn" id="planSelectNone">none</button>
+              </span>
+            </div>
+            <div class="plan-summary" id="planSummary"></div>
+            <div class="plan-table-wrap">
+              <table class="plan-table">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>Eagle folder</th>
+                    <th class="num" title="Not in Eagle yet — will be imported">New</th>
+                    <th class="num" title="Already in Eagle, in this folder">In place</th>
+                    <th class="num" title="Already in Eagle, but in a different folder">Elsewhere</th>
+                    <th class="num" title="Skipped: duplicates on your PC, files in Eagle's trash, or files you deleted from Eagle">Skipped</th>
+                  </tr>
+                </thead>
+                <tbody id="planBody"></tbody>
+              </table>
+            </div>
           </div>
-          <div class="log" id="logView"></div>
-        </div>
-      </section>
-    </main>
+
+          <div class="card log-card grow">
+            <div class="card-title row between">
+              <span>Log</span>
+              <label class="check mini"><input type="checkbox" id="autoScroll" checked /><span>auto-scroll</span></label>
+            </div>
+            <div class="log" id="logView"></div>
+          </div>
+        </section>
+      </main>
+    </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="tagger.js"></script>
+  <script src="toolkit.js"></script>
+  <script src="shell.js"></script>
 </body>
 </html>

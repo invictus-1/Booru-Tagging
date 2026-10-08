@@ -193,8 +193,12 @@ def _handle_tag(req: dict) -> None:
         tags = dict(sorted(tags.items(), key=lambda kv: kv[1], reverse=True))
         payload = [{"filename": os.path.basename(path), "tags": tags}]
         os.makedirs(os.path.dirname(json_out), exist_ok=True)
-        with open(json_out, "w", encoding="utf-8") as f:
+        # Write to a temp file and swap it in, so nothing (e.g. Eagle Sync
+        # attaching tags) can ever read a half-written tag file.
+        tmp_out = f"{json_out}.tmp-{os.getpid()}-{req['id']}"
+        with open(tmp_out, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_out, json_out)
         _send({
             "id": req["id"],
             "ok": True,
