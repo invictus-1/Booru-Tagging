@@ -18,9 +18,9 @@
 - Eagle Sync: overlapping source folders are walked once; Eagle folder names
   containing "/" can't be mixed up with nested folders.
 - Tagger: tag files are written atomically, so Sync can never read a half-written one.
-- Tag Merger: only item metadata is touched. The library-level metadata.json
-  (folder tree) was being picked up and correctly refused ("1 failed"); it's
-  now skipped outright.
+- Tag Merger: only item metadata (`<id>.info/metadata.json`) is ever considered;
+  the library-level metadata.json (folder tree) is skipped outright instead of
+  being reported as a failed item.
 
 ## Booru Suite — 1.0.0
 
