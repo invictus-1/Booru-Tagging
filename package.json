@@ -1,6 +1,6 @@
 {
   "name": "booru-suite",
-  "version": "1.0.1",
+  "version": "4.0.0",
   "description": "Booru Tagger + Eagle Toolkit in one app: GPU tagging, renaming, tag merging and duplicate-proof Eagle sync",
   "main": "main.js",
   "scripts": {

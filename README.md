@@ -38,7 +38,7 @@ while a sync runs. A pulsing dot on a tab means that tool has a job running.
 ```bash
 npm install
 npm start          # run from source
-npm run build      # Windows installer → dist/Booru Suite Setup <version>.exe
+npm run build      # Windows installer → dist/Booru-Suite-Setup-<version>.exe
 ```
 
 First Tagger use creates a Python environment and installs the inference
@@ -243,6 +243,10 @@ lib/walk.js          Shared fs helpers
 worker/              Python inference worker + requirements
 renderer/            shell (header/tabs) + tagger.* + toolkit.*
 ```
+
+**Releases:** bump `"version"` in `package.json`, add a `## Booru Suite — x.y.z`
+section to `CHANGELOG.md`, then create tag `vX.Y.Z` (e.g. via *Draft a new release*
+on GitHub). The Release action builds the installer and publishes the release.
 
 See [CHANGELOG.md](CHANGELOG.md) for version history. Earlier versions
 (Booru Tagger V3, the standalone Eagle Toolkit, and the Docker-based V2) live
