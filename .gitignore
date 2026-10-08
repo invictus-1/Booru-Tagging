@@ -1,0 +1,13 @@
+node_modules/
+.venv/
+dist/
+__pycache__/
+*.pyc
+eagle_sync_hashes.json
+eagle_sync_ledger.ndjson
+eagle_sync_runs/
+rename_history.ndjson
+merge_processed.ndjson
+processed.log
+.migrated-v1
+.migrated-v2

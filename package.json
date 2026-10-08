@@ -1,15 +1,15 @@
 {
-  "name": "booru-tagger-v3",
-  "version": "3.0.0",
-  "description": "Booru image tagger with integrated GPU inference — no Docker required",
+  "name": "booru-suite",
+  "version": "1.0.1",
+  "description": "Booru Tagger + Eagle Toolkit in one app: GPU tagging, renaming, tag merging and duplicate-proof Eagle sync",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder"
   },
   "build": {
-    "appId": "com.booru.tagger",
-    "productName": "Booru Tagger",
+    "appId": "com.booru.suite",
+    "productName": "Booru Suite",
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico"
