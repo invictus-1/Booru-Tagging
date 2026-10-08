@@ -22,10 +22,16 @@
       "assets/**"
     ],
     "extraResources": [
-      { "from": "worker", "to": "worker" }
+      {
+        "from": "worker",
+        "to": "worker"
+      }
     ],
     "directories": {
       "output": "dist"
+    },
+    "nsis": {
+      "artifactName": "Booru-Suite-Setup-${version}.${ext}"
     }
   },
   "devDependencies": {
