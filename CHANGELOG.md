@@ -1,7 +1,24 @@
 # Changelog
 
-## Booru Suite — 1.0.1 (review fixes)
+## Booru Suite — 4.0.0
 
+Booru Tagger V3 and the Eagle Toolkit merged into one app, plus the new Eagle
+Sync. (Continues the repo's numbering after Booru Tagger 3.0.0.)
+
+### Highlights
+- Four tabs: **Tagger**, **Renamer**, **Tag Merger**, **Eagle Sync**. Each
+  tool's screen and behaviour is unchanged.
+- Tagger and Eagle tools run independently, so you can tag while a sync runs.
+  A pulsing dot marks tabs with a running job.
+- First launch copies Eagle Sync history (hash database, import ledger, run
+  journals) from the old Eagle Toolkit, and reuses the old Tagger's Python
+  environment in place, so there's no CUDA reinstall. Old apps are not modified.
+- Each Eagle tool keeps its own last-run numbers when you switch tabs.
+- One data folder (`%APPDATA%\booru-suite`) for both `npm start` and the installed app.
+- The "close Eagle first" tip now appears only on Tag Merger (Eagle Sync needs
+  Eagle open).
+
+### Hardening (from a full code review before release)
 - Eagle Sync: a file that couldn't be read during the scan (locked, cloud-only,
   still downloading) is no longer imported blind. It's listed as "couldn't
   verify" and left out until a later scan can check it.
@@ -21,22 +38,6 @@
 - Tag Merger: only item metadata (`<id>.info/metadata.json`) is ever considered;
   the library-level metadata.json (folder tree) is skipped outright instead of
   being reported as a failed item.
-
-## Booru Suite — 1.0.0
-
-Booru Tagger V3 and Eagle Toolkit merged into one app.
-
-- Four tabs: **Tagger**, **Renamer**, **Tag Merger**, **Eagle Sync**. Each
-  tool's screen and behaviour is unchanged.
-- Tagger and Eagle tools run independently, so you can tag while a sync runs.
-  A pulsing dot marks tabs with a running job.
-- First launch copies Eagle Sync history (hash database, import ledger, run
-  journals) from the old Eagle Toolkit, and reuses the old Tagger's Python
-  environment in place, so there's no CUDA reinstall. Old apps are not modified.
-- Each Eagle tool keeps its own last-run numbers when you switch tabs.
-- One data folder (`%APPDATA%\booru-suite`) for both `npm start` and the installed app.
-- The "close Eagle first" tip now appears only on Tag Merger (Eagle Sync needs
-  Eagle open).
 
 ## Eagle Toolkit — 1.1.0
 
